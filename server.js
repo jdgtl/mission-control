@@ -37,7 +37,15 @@ const GATEWAY_PORT = mcConfig.gateway?.port || 18789;
 const GATEWAY_TOKEN = mcConfig.gateway?.token || '';
 const NOTION_DB_ID = mcConfig.notion?.dbId || '';
 const NOTION_TOKEN = mcConfig.notion?.token || '';
-const WORKSPACE_PATH = mcConfig.workspace || process.env.HOME || '/home/ubuntu';
+// Auto-detect workspace from OpenClaw config if not set
+let detectedWorkspace = mcConfig.workspace || '';
+if (!detectedWorkspace) {
+  try {
+    const ocConfig = JSON.parse(fs.readFileSync(path.join(process.env.HOME || '/home/ubuntu', '.openclaw/openclaw.json'), 'utf8'));
+    detectedWorkspace = ocConfig.agents?.defaults?.workspace || '';
+  } catch {}
+}
+const WORKSPACE_PATH = detectedWorkspace || path.join(process.env.HOME || '/home/ubuntu', 'clawd');
 const SKILLS_PATH = mcConfig.skillsPath || path.join(WORKSPACE_PATH, 'skills');
 const MEMORY_PATH = mcConfig.memoryPath || path.join(WORKSPACE_PATH, 'memory');
 const S3_BUCKET = mcConfig.aws?.bucket || '';
