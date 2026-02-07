@@ -48,9 +48,8 @@ function QuickActionsBar() {
       if (data.status === 'triggered') {
         setResult('✅ Heartbeat triggered')
       } else if (data.status === 'sent') {
-        // Open chat widget with the result for email/schedule actions
-        const message = data.reply || 'Checking...'
-        window.dispatchEvent(new CustomEvent('open-chat', { detail: { message, autoSend: false } }))
+        // Show reply as a result toast instead of opening chat
+        setResult(`✅ ${data.reply || 'Done'}`)
         setResult('✅ Opened in chat')
       } else if (data.status === 'error') {
         setResult(`❌ ${data.error}`)
@@ -59,10 +58,10 @@ function QuickActionsBar() {
       }
       
       // Clear result after 5 seconds
-      setTimeout(() => setResult(null), 5000)
+      setTimeout(() => setResult(null), 10000)
     } catch (e: any) {
       setResult(`❌ ${e.message}`)
-      setTimeout(() => setResult(null), 5000)
+      setTimeout(() => setResult(null), 10000)
     } finally {
       setLoading(null)
     }

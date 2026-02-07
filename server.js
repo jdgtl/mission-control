@@ -2367,7 +2367,8 @@ app.post('/api/quick/emails', async (req, res) => {
       body: JSON.stringify({ tool: 'sessions_send', args: { sessionKey: 'agent:main:main', message: 'Check for urgent unread emails and report back briefly.' } })
     });
     const data = await r.json();
-    res.json({ status: 'sent', reply: data?.result?.content?.[0]?.text || 'Checking...' });
+    const reply = data?.result?.reply || data?.result?.content?.[0]?.text || JSON.stringify(data?.result || data);
+    res.json({ status: 'sent', reply });
   } catch(e) { 
     res.json({ status: 'error', error: e.message }); 
   }
@@ -2382,7 +2383,8 @@ app.post('/api/quick/schedule', async (req, res) => {
       body: JSON.stringify({ tool: 'sessions_send', args: { sessionKey: 'agent:main:main', message: "Check today's calendar events and list them briefly." } })
     });
     const data = await r.json();
-    res.json({ status: 'sent', reply: data?.result?.content?.[0]?.text || 'Checking...' });
+    const schedReply = data?.result?.reply || data?.result?.content?.[0]?.text || JSON.stringify(data?.result || data);
+    res.json({ status: 'sent', reply: schedReply });
   } catch(e) { 
     res.json({ status: 'error', error: e.message }); 
   }
