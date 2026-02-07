@@ -69,10 +69,21 @@ async function fetchSessions(limit = 50) {
       }),
     });
     const data = await gwRes.json();
-    return data?.result?.details?.sessions || [];
+    // Gateway returns both result.content[0].text (JSON string) and result.details (parsed object)
+    // Use details for parsed data, fallback to parsing content text
+    if (data?.result?.details) {
+      return data.result.details; // Returns {count, sessions: [...]}
+    }
+    // Fallback: parse from text content
+    const textResult = data?.result?.content?.[0]?.text;
+    if (textResult) {
+      const parsed = JSON.parse(textResult);
+      return parsed; // Should be {count, sessions: [...]}
+    }
+    return { count: 0, sessions: [] };
   } catch (e) {
     console.error('[fetchSessions]', e.message);
-    return [];
+    return { count: 0, sessions: [] };
   }
 }
 
@@ -330,7 +341,8 @@ app.get('/api/status', async (req, res) => {
     // Fetch real token usage from sessions
     let tokenUsage = { used: 0, limit: 1000000, percentage: 0 };
     try {
-      const sessions = await fetchSessions(50);
+      const sessionData = await fetchSessions(50);
+      const sessions = sessionData.sessions || [];
       const totalTokens = sessions.reduce((sum, s) => sum + (s.totalTokens || 0), 0);
       tokenUsage = {
         used: totalTokens,
@@ -365,10 +377,11 @@ app.get('/api/status', async (req, res) => {
 // ========== API: Live sessions (from OpenClaw gateway) ==========
 app.get('/api/sessions', async (req, res) => {
   try {
-    const sessions = await fetchSessions(25);
+    const sessionData = await fetchSessions(25);
+    const sessions = sessionData.sessions || [];
 
     res.json({
-      count: sessions.length,
+      count: sessionData.count || sessions.length,
       sessions: sessions.map(s => ({
         key: s.key,
         kind: s.kind,
@@ -832,7 +845,8 @@ Be thorough. Your output will be shown directly to the user as the task result.`
 // ========== API: Costs — Real token usage from sessions ==========
 app.get('/api/costs', async (req, res) => {
   try {
-    const sessions = await fetchSessions(50);
+    const sessionData = await fetchSessions(50);
+    const sessions = sessionData.sessions || [];
 
     // Compute totals
     const totalTokens = sessions.reduce((sum, s) => sum + (s.totalTokens || 0), 0);
@@ -1014,7 +1028,8 @@ app.post('/api/scout/dismiss', (req, res) => {
 // ========== API: Agents — Real from gateway sessions + custom agents ==========
 app.get('/api/agents', async (req, res) => {
   try {
-    const sessions = await fetchSessions(50);
+    const sessionData = await fetchSessions(50);
+    const sessions = sessionData.sessions || [];
 
     // Load custom agents from agents-custom.json
     const customAgentsFile = path.join(__dirname, 'agents-custom.json');
@@ -1627,6 +1642,43 @@ app.get('/api/config', (req, res) => {
 });
 
 // ========== API: Setup (first-time configuration) ==========
+// GET: Return current setup status
+app.get('/api/setup', async (req, res) => {
+  try {
+    // Check if gateway is running
+    let gatewayRunning = false;
+    try {
+      const response = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/status`, { 
+        method: 'GET',
+        timeout: 3000 
+      });
+      gatewayRunning = response.ok;
+    } catch {
+      gatewayRunning = false;
+    }
+
+    // Check if config exists
+    const configExists = fs.existsSync(MC_CONFIG_PATH);
+
+    // Get gateway token (mask it for security)
+    const maskedToken = GATEWAY_TOKEN ? GATEWAY_TOKEN.substring(0, 8) + '...' : '';
+
+    // Get modules status
+    const modules = mcConfig.modules || {};
+
+    res.json({
+      gatewayRunning,
+      configExists,
+      gatewayPort: GATEWAY_PORT,
+      gatewayToken: maskedToken,
+      modules
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST: Update setup configuration
 app.post('/api/setup', (req, res) => {
   try {
     const { name, subtitle, gatewayPort, gatewayToken, modules, aws, workspace, skillsPath, memoryPath } = req.body;
