@@ -48,7 +48,10 @@ function QuickActionsBar() {
       if (data.status === 'triggered') {
         setResult('✅ Heartbeat triggered')
       } else if (data.status === 'sent') {
-        setResult(data.reply || 'Request sent')
+        // Open chat widget with the result for email/schedule actions
+        const message = data.reply || 'Checking...'
+        window.dispatchEvent(new CustomEvent('open-chat', { detail: { message, autoSend: false } }))
+        setResult('✅ Opened in chat')
       } else if (data.status === 'error') {
         setResult(`❌ ${data.error}`)
       } else {
@@ -419,17 +422,11 @@ export default function Dashboard() {
               <div style={{ padding: m ? 14 : 24 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                   <h3 style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.92)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <BarChart3 size={13} style={{ color: '#007AFF' }} /> Tokens
+                    <BarChart3 size={13} style={{ color: '#007AFF' }} /> Tokens Used
                   </h3>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.92)', fontVariantNumeric: 'tabular-nums' }}>{tokenUsage.percentage}%</span>
+                  <span style={{ fontSize: 18, fontWeight: 700, color: 'rgba(255,255,255,0.92)', fontVariantNumeric: 'tabular-nums' }}>{(tokenUsage.used / 1000).toFixed(0)}k</span>
                 </div>
-                <div className="macos-progress" style={{ marginBottom: 8 }}>
-                  <div className="macos-progress-fill" style={{ width: `${tokenUsage.percentage}%` }} />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>{(tokenUsage.used / 1000).toFixed(0)}k</span>
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>{(tokenUsage.limit / 1000).toFixed(0)}k limit</span>
-                </div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>This session period · No usage limit</div>
               </div>
             </GlassCard>
 

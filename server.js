@@ -281,8 +281,8 @@ async function refreshStatusCache() {
     const totalTokens = sessionList.reduce((sum, s) => sum + (s.totalTokens || 0), 0);
     const tokenUsage = {
       used: totalTokens,
-      limit: 1000000,
-      percentage: parseFloat((totalTokens / 10000).toFixed(1))
+      limit: 0,
+      percentage: 0
     };
 
     // Activity fallback
