@@ -21,31 +21,36 @@ const GOALS = {
   secondary: ['edtech', 'ai storytelling', 'children education', 'empathy', 'startup funding', 'swedish grant'],
   freelance: ['freelance developer', 'react job', 'supabase', 'typescript developer', 'nextjs developer'],
   local: ['småland', 'kronoberg', 'växjö', 'åseda', 'alvesta', 'lenhovda'],
+  openclaw: ['openclaw', 'clawd', 'mission control', 'ai agent', 'skill', 'sub-agent', 'heartbeat', 'cron job', 'gateway'],
 };
 
 // Search queries grouped by category
 const QUERIES = [
-  // Direct opportunity hunting
+  // === OPENCLAW ECOSYSTEM ===
+  { q: 'site:x.com openclaw OR clawd "mission control" OR "skill" OR "built" OR "agent"', category: 'openclaw', source: 'twitter', weight: 1.0 },
+  { q: 'site:x.com openclaw "new feature" OR "just shipped" OR "update" OR "tip"', category: 'openclaw', source: 'twitter', weight: 1.0 },
+  { q: 'site:x.com clawd agent "my agent" "built" OR "made" OR "automated" OR "workflow"', category: 'openclaw', source: 'twitter', weight: 0.95 },
+  { q: 'site:github.com openclaw skill OR plugin OR "mission control"', category: 'openclaw-github', source: 'github', weight: 1.0 },
+  { q: 'site:reddit.com openclaw OR clawd agent automation', category: 'openclaw', source: 'reddit', weight: 0.9 },
+  { q: 'site:youtube.com openclaw OR clawd "ai agent" tutorial OR guide OR setup', category: 'openclaw-tutorial', source: 'youtube', weight: 0.9 },
+  { q: 'clawhub.com skill OR "new skill" OR automation', category: 'openclaw-skills', source: 'web', weight: 1.0 },
+  { q: '"openclaw" "discord" agent automation workflow 2026', category: 'openclaw', source: 'web', weight: 0.85 },
+  
+  // === FREELANCE & JOBS ===
   { q: '"looking for" "web developer" OR "website developer" sweden OR remote 2026', category: 'freelance', source: 'web', weight: 1.0 },
-  { q: '"need a website" OR "need web developer" OR "behöver hemsida" small business', category: 'web-leads', source: 'web', weight: 0.95 },
-  
-  // Twitter/X opportunities
   { q: 'site:x.com "hiring" OR "looking for" "react developer" OR "frontend developer" remote', category: 'twitter-jobs', source: 'twitter', weight: 0.9 },
-  { q: 'site:x.com "need a developer" OR "need a website" OR "looking for web developer"', category: 'twitter-leads', source: 'twitter', weight: 0.85 },
-  { q: 'site:x.com edtech AI children education startup 2026', category: 'edtech', source: 'twitter', weight: 0.7 },
-  
-  // LinkedIn opportunities
   { q: 'site:linkedin.com "hiring" "react" OR "next.js" OR "typescript" "sweden" OR "remote"', category: 'linkedin-jobs', source: 'linkedin', weight: 0.85 },
-  { q: 'site:linkedin.com edtech AI storytelling children learning startup', category: 'edtech', source: 'linkedin', weight: 0.7 },
-  
-  // Reddit opportunities
   { q: 'site:reddit.com/r/forhire OR site:reddit.com/r/webdev "looking for" react developer', category: 'reddit-gigs', source: 'reddit', weight: 0.8 },
   
-  // Grants & competitions (high value)
+  // === EDTECH & TALE FORGE ===
+  { q: 'site:x.com edtech AI children education startup 2026', category: 'edtech', source: 'twitter', weight: 0.7 },
+  { q: 'site:linkedin.com edtech AI storytelling children learning startup', category: 'edtech', source: 'linkedin', weight: 0.7 },
+  
+  // === GRANTS & COMPETITIONS ===
   { q: '"startup grant" OR "startup competition" edtech OR AI europe 2026 application deadline', category: 'funding', source: 'web', weight: 0.95 },
   { q: 'sweden "innovation grant" OR "startup funding" OR "ALMI" OR "Vinnova" 2026 open', category: 'swedish-grants', source: 'web', weight: 1.0 },
   
-  // Upwork gigs
+  // === UPWORK ===
   { q: 'site:upwork.com react next.js supabase developer', category: 'upwork', source: 'upwork', weight: 0.8 },
 ];
 
@@ -103,6 +108,14 @@ function scoreOpportunity(result, query) {
   if (text.includes('freelance') || text.includes('remote') || text.includes('contract')) score += 10;
   if (text.includes('grant') || text.includes('funding') || text.includes('competition') || text.includes('tävling')) score += 12;
   
+  // OpenClaw ecosystem (high value for self-improvement)
+  for (const kw of GOALS.openclaw) {
+    if (text.includes(kw)) score += 12;
+  }
+  if (query.category.startsWith('openclaw')) score += 15; // Boost all openclaw results
+  if (text.includes('new skill') || text.includes('built a skill') || text.includes('automation')) score += 10;
+  if (text.includes('tutorial') || text.includes('guide') || text.includes('how to')) score += 8;
+  
   // Source weight
   score = Math.round(score * query.weight);
   
@@ -124,6 +137,10 @@ function detectSource(url) {
   if (url.includes('reddit.com')) return 'Reddit';
   if (url.includes('upwork.com')) return 'Upwork';
   if (url.includes('fiverr.com')) return 'Fiverr';
+  if (url.includes('github.com')) return 'GitHub';
+  if (url.includes('youtube.com') || url.includes('youtu.be')) return 'YouTube';
+  if (url.includes('clawhub.com')) return 'ClawHub';
+  if (url.includes('openclaw.ai') || url.includes('docs.openclaw')) return 'OpenClaw';
   return 'Web';
 }
 
