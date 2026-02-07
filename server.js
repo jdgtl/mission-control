@@ -65,7 +65,7 @@ async function fetchSessions(limit = 50) {
       },
       body: JSON.stringify({
         tool: 'sessions_list',
-        args: { limit, messageLimit: 0 },
+        args: { limit, messageLimit: 1 },
       }),
     });
     const data = await gwRes.json();
