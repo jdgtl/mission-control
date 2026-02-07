@@ -4,14 +4,46 @@ const path = require('path');
 const http = require('http');
 const { execSync } = require('child_process');
 
+// ========== CONFIG: Load mc-config.json (or create from defaults) ==========
+const MC_CONFIG_PATH = path.join(__dirname, 'mc-config.json');
+const MC_DEFAULT_CONFIG_PATH = path.join(__dirname, 'mc-config.default.json');
+let mcConfig;
+try {
+  mcConfig = JSON.parse(fs.readFileSync(MC_CONFIG_PATH, 'utf8'));
+} catch {
+  // First run — copy default
+  if (fs.existsSync(MC_DEFAULT_CONFIG_PATH)) {
+    fs.copyFileSync(MC_DEFAULT_CONFIG_PATH, MC_CONFIG_PATH);
+    mcConfig = JSON.parse(fs.readFileSync(MC_CONFIG_PATH, 'utf8'));
+  } else {
+    mcConfig = {
+      name: 'Mission Control',
+      subtitle: 'Mission Control',
+      modules: { dashboard: true, chat: true, workshop: true, costs: true, cron: true, agents: true, settings: true, skills: true },
+      gateway: { port: 18789, token: '' },
+      aws: { enabled: false, bucket: '', region: 'us-east-1' },
+      notion: { enabled: false, dbId: '', token: '' },
+      scout: { enabled: false, braveApiKey: '' },
+      workspace: '',
+      skillsPath: '',
+      memoryPath: ''
+    };
+  }
+}
+
+// Config-derived constants (backward compat)
+const GATEWAY_PORT = mcConfig.gateway?.port || 18789;
+const GATEWAY_TOKEN = mcConfig.gateway?.token || '';
+const NOTION_DB_ID = mcConfig.notion?.dbId || '';
+const NOTION_TOKEN = mcConfig.notion?.token || '';
+const WORKSPACE_PATH = mcConfig.workspace || process.env.HOME || '/home/ubuntu';
+const SKILLS_PATH = mcConfig.skillsPath || path.join(WORKSPACE_PATH, 'skills');
+const MEMORY_PATH = mcConfig.memoryPath || path.join(WORKSPACE_PATH, 'memory');
+const S3_BUCKET = mcConfig.aws?.bucket || '';
+const S3_REGION = mcConfig.aws?.region || 'us-east-1';
+
 const app = express();
 const PORT = 3333;
-const GATEWAY_PORT = 18789;
-const GATEWAY_TOKEN = 'mc-zinbot-2026';
-
-// Notion config
-const NOTION_DB_ID = 'c540b580-22b5-4481-b33d-e55585d76771';
-const NOTION_TOKEN = 'ntn_R18444199542F0vXHK0KOITqdSPpebU5GfT2rTJMAS1hpC';
 
 app.use(express.json());
 
@@ -198,7 +230,7 @@ app.get('/api/status', async (req, res) => {
     // Read heartbeat state
     let heartbeat = {};
     try {
-      const raw = fs.readFileSync('/home/ubuntu/clawd/memory/heartbeat-state.json', 'utf8');
+      const raw = fs.readFileSync(path.join(MEMORY_PATH, 'heartbeat-state.json'), 'utf8');
       heartbeat = JSON.parse(raw);
     } catch (e) {
       heartbeat = { lastHeartbeat: null, lastChecks: {}, note: 'Unable to read heartbeat state' };
@@ -253,7 +285,7 @@ app.get('/api/status', async (req, res) => {
         d.setDate(d.getDate() - dayOffset);
         const dateStr = d.toISOString().split('T')[0];
         try {
-          const memPath = `/home/ubuntu/clawd/memory/${dateStr}.md`;
+          const memPath = path.join(MEMORY_PATH, `${dateStr}.md`);
           if (fs.existsSync(memPath)) {
             const memContent = fs.readFileSync(memPath, 'utf8');
             // Extract h2 sections as activity items
@@ -310,7 +342,7 @@ app.get('/api/status', async (req, res) => {
 
     res.json({
       agent: {
-        name: 'Zinbot',
+        name: mcConfig.name || 'Mission Control',
         status: 'active',
         model: modelMatch ? modelMatch[1].replace('us.anthropic.','').replace(/claude-opus-(\d+)-(\d+).*/, 'Claude Opus $1').replace(/claude-sonnet-(\d+).*/, 'Claude Sonnet $1').replace(/-/g,' ') : 'Claude Opus 4',
         activeSessions: sessionsMatch ? parseInt(sessionsMatch[1]) : 0,
@@ -699,7 +731,7 @@ app.get('/api/agents', async (req, res) => {
 app.get('/api/settings', async (req, res) => {
   try {
     // Read OpenClaw config
-    const configPath = '/home/ubuntu/.openclaw/openclaw.json';
+    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
     const configData = fs.existsSync(configPath)
       ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
       : {};
@@ -707,10 +739,10 @@ app.get('/api/settings', async (req, res) => {
     // Sanitize config (remove sensitive data)
     const sanitized = {
       model: configData.model || 'anthropic.claude-3-opus-20240229-v1:0',
-      gateway_port: configData.gateway_port || 18789,
-      memory_path: configData.memory_path || '/home/ubuntu/clawd/memory',
-      skills_path: configData.skills_path || '/home/ubuntu/clawd/skills',
-      bedrock_region: configData.bedrock_region || 'us-east-1'
+      gateway_port: GATEWAY_PORT,
+      memory_path: MEMORY_PATH,
+      skills_path: SKILLS_PATH,
+      bedrock_region: S3_REGION
     };
 
     res.json(sanitized);
@@ -752,7 +784,7 @@ app.get('/api/skills', async (req, res) => {
     const available = [];
 
     // Read OpenClaw config for installed skills
-    const configPath = '/home/ubuntu/.openclaw/openclaw.json';
+    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
     let config = {};
     if (fs.existsSync(configPath)) {
       config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -773,7 +805,7 @@ app.get('/api/skills', async (req, res) => {
     }
 
     // Scan workspace skills directory
-    const workspaceSkillsPath = '/home/ubuntu/clawd/skills';
+    const workspaceSkillsPath = SKILLS_PATH;
     if (fs.existsSync(workspaceSkillsPath)) {
       const dirs = fs.readdirSync(workspaceSkillsPath, { withFileTypes: true })
         .filter(dirent => dirent.isDirectory())
@@ -847,7 +879,7 @@ app.post('/api/skills/:name/toggle', async (req, res) => {
     const { name } = req.params;
 
     // Update OpenClaw config
-    const configPath = '/home/ubuntu/.openclaw/openclaw.json';
+    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
     const config = fs.existsSync(configPath)
       ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
       : { skills: { entries: {} } };
@@ -916,7 +948,7 @@ app.get('/api/aws/services', async (req, res) => {
       { name: 'Amazon Polly', cmd: 'aws polly describe-voices --query "length(Voices)" --output text 2>/dev/null', desc: 'Text-to-speech (Neural voices)', parse: (v) => `${v.trim()} voices` },
       { name: 'Amazon Transcribe', cmd: 'aws transcribe list-transcription-jobs --max-results 1 --output json 2>/dev/null', desc: 'Speech-to-text', parse: () => 'Ready' },
       { name: 'Amazon Translate', cmd: 'aws translate list-languages --query "length(Languages)" --output text 2>/dev/null', desc: 'Translation (75+ languages)', parse: (v) => `${v.trim()} languages` },
-      { name: 'Amazon S3', cmd: 'aws s3api head-bucket --bucket zinbot-resources-239541130189 2>/dev/null && echo ok', desc: 'Storage (zinbot-resources)', parse: () => 'Bucket active' },
+      { name: 'Amazon S3', cmd: S3_BUCKET ? `aws s3api head-bucket --bucket ${S3_BUCKET} 2>/dev/null && echo ok` : 'echo none', desc: `Storage (${S3_BUCKET || 'not configured'})`, parse: () => S3_BUCKET ? 'Bucket active' : 'Not configured' },
     ];
 
     for (const svc of checks) {
@@ -975,7 +1007,7 @@ app.post('/api/model', async (req, res) => {
     if (!model) return res.status(400).json({ error: 'model required' });
 
     // Read current config, update model, write back
-    const configPath = require('os').homedir() + '/.openclaw/openclaw.json';
+    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
     // Set the default model
@@ -1001,7 +1033,6 @@ app.post('/api/model', async (req, res) => {
 });
 
 // Generate image via Bedrock → save to S3
-const S3_BUCKET = 'zinbot-resources-239541130189';
 const S3_PREFIX = 'images/mc-generated';
 
 app.post('/api/aws/generate-image', async (req, res) => {
@@ -1135,6 +1166,102 @@ app.get('/api/aws/s3-image/:key(*)', async (req, res) => {
     res.type('png').sendFile(localCache);
   } catch (error) {
     res.status(404).json({ error: 'Image not found' });
+  }
+});
+
+// ========== API: Config (public, secrets stripped) ==========
+app.get('/api/config', (req, res) => {
+  // Deep clone to avoid mutating mcConfig
+  const safe = JSON.parse(JSON.stringify(mcConfig));
+  if (safe.gateway) safe.gateway = { port: safe.gateway.port };
+  if (safe.notion) delete safe.notion.token;
+  if (safe.scout) delete safe.scout.braveApiKey;
+  res.json(safe);
+});
+
+// ========== API: Setup (first-time configuration) ==========
+app.post('/api/setup', (req, res) => {
+  try {
+    const { name, subtitle, gatewayPort, gatewayToken, modules, aws, workspace, skillsPath, memoryPath } = req.body;
+    if (name) mcConfig.name = name;
+    if (subtitle) mcConfig.subtitle = subtitle;
+    if (gatewayPort) mcConfig.gateway.port = gatewayPort;
+    if (gatewayToken) mcConfig.gateway.token = gatewayToken;
+    if (modules && typeof modules === 'object') {
+      mcConfig.modules = { ...mcConfig.modules, ...modules };
+    }
+    if (aws && typeof aws === 'object') {
+      mcConfig.aws = { ...mcConfig.aws, ...aws };
+    }
+    if (workspace) mcConfig.workspace = workspace;
+    if (skillsPath) mcConfig.skillsPath = skillsPath;
+    if (memoryPath) mcConfig.memoryPath = memoryPath;
+    fs.writeFileSync(MC_CONFIG_PATH, JSON.stringify(mcConfig, null, 2));
+    // Return safe copy
+    const safe = JSON.parse(JSON.stringify(mcConfig));
+    if (safe.gateway) safe.gateway = { port: safe.gateway.port };
+    if (safe.notion) delete safe.notion.token;
+    if (safe.scout) delete safe.scout.braveApiKey;
+    res.json({ ok: true, config: safe });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// AWS Cost Explorer — real spending data
+app.get('/api/aws/costs', async (req, res) => {
+  try {
+    const util = require('util');
+    const execPromise = util.promisify(require('child_process').exec);
+
+    // Get current month daily breakdown by service
+    const startDate = new Date();
+    startDate.setDate(1);
+    const start = startDate.toISOString().split('T')[0];
+    const end = new Date().toISOString().split('T')[0];
+
+    const { stdout } = await execPromise(
+      `aws ce get-cost-and-usage --time-period Start=${start},End=${end} --granularity DAILY --metrics BlendedCost --group-by Type=DIMENSION,Key=SERVICE --output json 2>/dev/null`,
+      { timeout: 15000 }
+    );
+    const data = JSON.parse(stdout);
+
+    // Parse into daily totals + service breakdown
+    const services = {};
+    const daily = [];
+    let total = 0;
+
+    for (const r of (data.ResultsByTime || [])) {
+      const day = r.TimePeriod.Start;
+      let dayTotal = 0;
+      for (const g of (r.Groups || [])) {
+        const svc = g.Keys[0];
+        const amt = parseFloat(g.Metrics.BlendedCost.Amount);
+        if (amt > 0.001) {
+          services[svc] = (services[svc] || 0) + amt;
+          dayTotal += amt;
+        }
+      }
+      daily.push({ date: day, cost: Math.round(dayTotal * 100) / 100 });
+      total += dayTotal;
+    }
+
+    // Sort services by cost
+    const serviceList = Object.entries(services)
+      .map(([name, cost]) => ({ name, cost: Math.round(cost * 100) / 100 }))
+      .sort((a, b) => b.cost - a.cost);
+
+    res.json({
+      period: { start, end },
+      total: Math.round(total * 100) / 100,
+      daily,
+      services: serviceList,
+      credits: 25000,
+      remaining: Math.round((25000 - total) * 100) / 100,
+    });
+  } catch (error) {
+    console.error('AWS costs error:', error);
+    res.status(500).json({ error: 'Failed to load cost data' });
   }
 });
 

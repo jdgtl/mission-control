@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import {
   LayoutDashboard,
   Hammer,
@@ -14,21 +15,44 @@ import {
   Cloud
 } from 'lucide-react'
 
-const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/chat', icon: MessageCircle, label: 'Chat' },
-  { to: '/workshop', icon: Hammer, label: 'Workshop' },
-  { to: '/costs', icon: DollarSign, label: 'Cost Tracker' },
-  { to: '/cron', icon: Clock, label: 'Cron Monitor' },
-  { to: '/scout', icon: Radar, label: 'Scout' },
-  { to: '/docs', icon: FileText, label: 'Doc Digest' },
-  { to: '/agents', icon: Bot, label: 'Agent Hub' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
-  { to: '/skills', icon: Puzzle, label: 'Skills' },
-  { to: '/aws', icon: Cloud, label: 'AWS' },
+interface McConfig {
+  name?: string
+  subtitle?: string
+  modules?: Record<string, boolean>
+}
+
+const allNavItems = [
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard', module: 'dashboard' },
+  { to: '/chat', icon: MessageCircle, label: 'Chat', module: 'chat' },
+  { to: '/workshop', icon: Hammer, label: 'Workshop', module: 'workshop' },
+  { to: '/costs', icon: DollarSign, label: 'Cost Tracker', module: 'costs' },
+  { to: '/cron', icon: Clock, label: 'Cron Monitor', module: 'cron' },
+  { to: '/scout', icon: Radar, label: 'Scout', module: 'scout' },
+  { to: '/docs', icon: FileText, label: 'Doc Digest', module: 'docs' },
+  { to: '/agents', icon: Bot, label: 'Agent Hub', module: 'agents' },
+  { to: '/settings', icon: Settings, label: 'Settings', module: 'settings' },
+  { to: '/skills', icon: Puzzle, label: 'Skills', module: 'skills' },
+  { to: '/aws', icon: Cloud, label: 'AWS', module: 'aws' },
 ]
 
 export default function Sidebar() {
+  const [config, setConfig] = useState<McConfig | null>(null)
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(setConfig)
+      .catch(() => setConfig({ name: 'Mission Control', subtitle: 'Mission Control', modules: {} }))
+  }, [])
+
+  // Filter nav items based on enabled modules
+  const navItems = config?.modules
+    ? allNavItems.filter(item => config.modules![item.module] !== false)
+    : allNavItems
+
+  const displayName = config?.name || 'Mission Control'
+  const subtitle = config?.subtitle || 'Mission Control'
+
   return (
     <aside style={{ width: 256, height: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }} className="macos-sidebar">
       {/* Logo Section */}
@@ -38,7 +62,7 @@ export default function Sidebar() {
             <Activity size={16} style={{ color: '#fff' }} />
           </div>
           <div>
-            <h1 style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>Mission Control</h1>
+            <h1 style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>{subtitle}</h1>
             <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>System Monitor</p>
           </div>
         </div>
@@ -80,7 +104,7 @@ export default function Sidebar() {
             <span className="status-dot status-dot-green" style={{ position: 'absolute', top: -4, right: -4 }} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>Zinbot</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>{displayName}</p>
             <p style={{ fontSize: 10, color: '#32D74B', fontWeight: 500 }}>Active</p>
           </div>
         </div>

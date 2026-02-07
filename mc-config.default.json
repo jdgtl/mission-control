@@ -1,0 +1,38 @@
+{
+  "name": "Mission Control",
+  "subtitle": "Mission Control",
+  "modules": {
+    "dashboard": true,
+    "chat": true,
+    "workshop": true,
+    "costs": true,
+    "cron": true,
+    "scout": false,
+    "docs": true,
+    "agents": true,
+    "settings": true,
+    "skills": true,
+    "aws": false
+  },
+  "gateway": {
+    "port": 18789,
+    "token": ""
+  },
+  "aws": {
+    "enabled": false,
+    "bucket": "",
+    "region": "us-east-1"
+  },
+  "notion": {
+    "enabled": false,
+    "dbId": "",
+    "token": ""
+  },
+  "scout": {
+    "enabled": false,
+    "braveApiKey": ""
+  },
+  "workspace": "",
+  "skillsPath": "",
+  "memoryPath": ""
+}
