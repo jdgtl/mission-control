@@ -248,7 +248,7 @@ app.post('/api/chat', async (req, res) => {
 // ========== STATUS CACHE (avoids 5s+ load times) ==========
 let statusCache = null;
 let statusCacheTime = 0;
-const STATUS_CACHE_TTL = 30000; // 30 seconds
+const STATUS_CACHE_TTL = 60000; // 60 seconds
 
 // Background status updater — refreshes cache without blocking requests
 async function refreshStatusCache() {
@@ -346,8 +346,8 @@ function buildActivityFromMemory() {
   return recentActivity.length ? recentActivity : [{ time: new Date().toISOString(), action: 'System running', detail: 'Dashboard active', type: 'general' }];
 }
 
-// Kick off initial cache build on startup
-refreshStatusCache();
+// Kick off initial cache build on startup (don't block server start)
+setTimeout(() => refreshStatusCache(), 50);
 // Pre-warm cron cache on startup (async to not block listen)
 setTimeout(() => {
   try {
