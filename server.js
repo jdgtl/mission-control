@@ -2381,7 +2381,10 @@ app.post('/api/quick/emails', async (req, res) => {
       body: JSON.stringify({ tool: 'sessions_send', args: { sessionKey: 'agent:main:main', message: 'Check for urgent unread emails and report back briefly.' } })
     });
     const data = await r.json();
-    const reply = data?.result?.reply || data?.result?.content?.[0]?.text || JSON.stringify(data?.result || data);
+    // result may be a JSON string — parse it to extract reply
+    let parsed = data?.result;
+    if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch {} }
+    const reply = (typeof parsed === 'object' ? parsed?.reply : null) || data?.result?.reply || 'Done';
     res.json({ status: 'sent', reply });
   } catch(e) { 
     res.json({ status: 'error', error: e.message }); 
@@ -2397,7 +2400,9 @@ app.post('/api/quick/schedule', async (req, res) => {
       body: JSON.stringify({ tool: 'sessions_send', args: { sessionKey: 'agent:main:main', message: "Check today's calendar events and list them briefly." } })
     });
     const data = await r.json();
-    const schedReply = data?.result?.reply || data?.result?.content?.[0]?.text || JSON.stringify(data?.result || data);
+    let schedParsed = data?.result;
+    if (typeof schedParsed === 'string') { try { schedParsed = JSON.parse(schedParsed); } catch {} }
+    const schedReply = (typeof schedParsed === 'object' ? schedParsed?.reply : null) || 'Done';
     res.json({ status: 'sent', reply: schedReply });
   } catch(e) { 
     res.json({ status: 'error', error: e.message }); 

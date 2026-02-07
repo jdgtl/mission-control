@@ -48,9 +48,8 @@ function QuickActionsBar() {
       if (data.status === 'triggered') {
         setResult('✅ Heartbeat triggered')
       } else if (data.status === 'sent') {
-        // Show reply as a result toast instead of opening chat
+        // Show reply as inline result
         setResult(`✅ ${data.reply || 'Done'}`)
-        setResult('✅ Opened in chat')
       } else if (data.status === 'error') {
         setResult(`❌ ${data.error}`)
       } else {
