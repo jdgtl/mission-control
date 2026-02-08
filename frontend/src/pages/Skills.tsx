@@ -224,12 +224,12 @@ export default function Skills() {
                           disabled={toggling === skill.name}
                           style={{
                             display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 8,
-                            border: 'none', background: '#007AFF', color: '#fff', fontSize: 11, cursor: 'pointer',
-                            opacity: toggling === skill.name ? 0.5 : 1,
+                            border: 'none', background: toggling === skill.name ? '#FF9500' : '#007AFF', color: '#fff', fontSize: 11, cursor: 'pointer',
+                            opacity: toggling === skill.name ? 0.7 : 1,
                           }}
                         >
                           <Download size={16} />
-                          <span>Install</span>
+                          <span>{toggling === skill.name ? 'Installing...' : 'Install'}</span>
                         </button>
                       )}
                     </div>

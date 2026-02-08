@@ -2060,21 +2060,33 @@ app.post('/api/skills/:name/install', async (req, res) => {
 
     const targetDir = path.join(skillsDir, name);
 
-    if (fs.existsSync(targetDir)) {
-      return res.json({ success: true, message: `Skill "${name}" already installed` });
+    // Clone or create skeleton
+    if (!fs.existsSync(targetDir)) {
+      if (repoUrl) {
+        const { execSync } = require('child_process');
+        execSync(`git clone --depth 1 ${repoUrl} ${targetDir}`, { timeout: 30000 });
+      } else {
+        fs.mkdirSync(targetDir, { recursive: true });
+        fs.writeFileSync(path.join(targetDir, 'SKILL.md'), `# ${name}\n\nSkill installed via Mission Control.\n\n## Usage\n\nConfigure this skill as needed.\n`);
+      }
     }
 
-    // If repo URL provided, clone it
-    if (repoUrl) {
-      const { execSync } = require('child_process');
-      execSync(`git clone --depth 1 ${repoUrl} ${targetDir}`, { timeout: 30000 });
-      res.json({ success: true, message: `Skill "${name}" installed from ${repoUrl}` });
-    } else {
-      // Create a minimal skill skeleton
-      fs.mkdirSync(targetDir, { recursive: true });
-      fs.writeFileSync(path.join(targetDir, 'SKILL.md'), `# ${name}\n\nSkill installed via Mission Control.\n\n## Usage\n\nConfigure this skill as needed.\n`);
-      res.json({ success: true, message: `Skill "${name}" created (skeleton). Add your SKILL.md content.` });
+    // Add to OpenClaw config so it's recognized as "installed"
+    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (!config.skills) config.skills = {};
+      if (!config.skills.entries) config.skills.entries = {};
+      if (!config.skills.entries[name]) {
+        config.skills.entries[name] = {
+          path: targetDir,
+          enabled: true
+        };
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      }
     }
+
+    res.json({ success: true, message: `Skill "${name}" installed and activated!` });
   } catch (error) {
     console.log('[Skills install] Error:', error.message);
     res.status(500).json({ error: `Failed to install: ${error.message}` });
@@ -2082,12 +2094,22 @@ app.post('/api/skills/:name/install', async (req, res) => {
 });
 
 app.post('/api/skills/:name/uninstall', async (req, res) => {
-  // Simplified uninstall - just remove from config
   try {
     const { name } = req.params;
-    res.json({ success: true, message: 'Skill uninstall not implemented' });
+
+    // Remove from OpenClaw config
+    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (config.skills?.entries?.[name]) {
+        delete config.skills.entries[name];
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      }
+    }
+
+    res.json({ success: true, message: `Skill "${name}" uninstalled` });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to uninstall skill' });
+    res.status(500).json({ error: `Failed to uninstall: ${error.message}` });
   }
 });
 
