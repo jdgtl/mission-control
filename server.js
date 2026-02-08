@@ -2202,7 +2202,8 @@ app.get('/api/models', async (req, res) => {
         const alias = Object.entries(aliases).find(([_, v]) => v === id)?.[0] || '';
         
         // Generate friendly name
-        if (id.includes('opus-4')) name = 'Claude Opus 4';
+        if (id.includes('opus-4-6')) name = 'Claude Opus 4.6';
+        else if (id.includes('opus-4')) name = 'Claude Opus 4';
         else if (id.includes('sonnet-4')) name = 'Claude Sonnet 4';
         else if (id.includes('haiku-4')) name = 'Claude Haiku 4.5';
         else if (id.includes('opus-3')) name = 'Claude Opus 3.5';

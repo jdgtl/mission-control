@@ -712,16 +712,16 @@ export default function Agents() {
                       style={{
                         width: '100%',
                         padding: '12px 16px',
-                        background: 'rgba(255,255,255,0.04)',
+                        background: '#1a1a2e',
                         border: '1px solid rgba(255,255,255,0.12)',
                         borderRadius: 8,
                         fontSize: 14,
-                        color: 'rgba(255,255,255,0.92)',
+                        color: '#fff',
                         outline: 'none'
                       }}
                     >
                       {(modelsData || []).map((model: any) => (
-                        <option key={model.id} value={model.id}>{model.name}</option>
+                        <option key={model.id} value={model.id} style={{ background: '#1a1a2e', color: '#fff' }}>{model.name}</option>
                       ))}
                     </select>
                   </div>
