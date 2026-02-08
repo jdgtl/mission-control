@@ -521,6 +521,8 @@ export default function Cron() {
     setActionLoading(null)
   }
 
+  const [toast, setToast] = useState<string | null>(null)
+
   const handleRun = async (jobId: string) => {
     setActionLoading(`run-${jobId}`)
     try {
@@ -529,14 +531,18 @@ export default function Cron() {
         headers: { 'Content-Type': 'application/json' }
       })
       if (response.ok) {
-        // Show brief feedback
-        setTimeout(refetch, 1000) // Refresh after delay to see status change
+        const jobName = jobs.find((j: any) => j.id === jobId)?.name || jobId
+        setToast(`✅ "${jobName}" triggered!`)
+        setTimeout(() => setToast(null), 4000)
+        setTimeout(refetch, 1500)
       } else {
         const error = await response.json()
-        alert(`Failed to run job: ${error.error || 'Unknown error'}`)
+        setToast(`❌ Failed: ${error.error || 'Unknown error'}`)
+        setTimeout(() => setToast(null), 5000)
       }
     } catch (error) {
-      alert(`Error: ${error}`)
+      setToast(`❌ Error: ${error}`)
+      setTimeout(() => setToast(null), 5000)
     }
     setActionLoading(null)
   }
@@ -632,6 +638,18 @@ export default function Cron() {
               Create Job
             </button>
           </div>
+
+          {/* Toast notification */}
+          {toast && (
+            <div style={{
+              padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 500,
+              background: toast.startsWith('✅') ? 'rgba(50,215,75,0.15)' : 'rgba(255,69,58,0.15)',
+              border: `1px solid ${toast.startsWith('✅') ? 'rgba(50,215,75,0.3)' : 'rgba(255,69,58,0.3)'}`,
+              color: toast.startsWith('✅') ? '#32D74B' : '#FF453A',
+            }}>
+              {toast}
+            </div>
+          )}
 
           {/* Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: m ? 8 : 16 }}>
