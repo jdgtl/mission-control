@@ -44,6 +44,7 @@ export default function Workflows() {
   const [importing, setImporting] = useState(false)
   const [importUrl, setImportUrl] = useState('')
   const [loading, setLoading] = useState(true)
+  const [running, setRunning] = useState<string | null>(null)
 
   const fetchWorkflows = () => {
     fetch('/api/workflows').then(r => r.json()).then(d => {
@@ -53,6 +54,18 @@ export default function Workflows() {
   }
 
   useEffect(() => { fetchWorkflows() }, [])
+
+  const runWorkflow = async (wfId: string, stepId?: string) => {
+    const key = stepId ? `${wfId}-${stepId}` : wfId
+    setRunning(key)
+    try {
+      await fetch(`/api/workflows/${wfId}/run`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stepId })
+      })
+    } catch {}
+    setTimeout(() => setRunning(null), 2000)
+  }
 
   const toggleWorkflow = async (wf: Workflow) => {
     const newEnabled = !wf._enabled
@@ -121,6 +134,19 @@ export default function Workflows() {
             <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, margin: '4px 0 0' }}>{wf.description}</p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
+            <motion.button
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+              onClick={() => runWorkflow(wf.id)}
+              disabled={running === wf.id}
+              style={{
+                padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+                background: running === wf.id ? 'rgba(255,149,0,0.15)' : '#0A84FF',
+                color: running === wf.id ? '#FF9500' : '#fff',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              {running === wf.id ? '⏳ Running...' : <><Play size={14} /> Run Now</>}
+            </motion.button>
             <motion.button
               whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
               onClick={() => toggleWorkflow(wf)}
@@ -193,6 +219,19 @@ export default function Workflows() {
                       <Clock size={10} /> {step.schedule}
                     </div>
                   )}
+                  <motion.button
+                    whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.95 }}
+                    onClick={() => runWorkflow(wf.id, step.id)}
+                    disabled={running === `${wf.id}-${step.id}`}
+                    style={{
+                      marginTop: 10, padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                      fontWeight: 600, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4,
+                      background: running === `${wf.id}-${step.id}` ? 'rgba(255,149,0,0.15)' : 'rgba(10,132,255,0.15)',
+                      color: running === `${wf.id}-${step.id}` ? '#FF9500' : '#0A84FF',
+                    }}
+                  >
+                    {running === `${wf.id}-${step.id}` ? '⏳ Running...' : <><Play size={11} /> Run Step</>}
+                  </motion.button>
                 </div>
               </div>
             </GlassCard>

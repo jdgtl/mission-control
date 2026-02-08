@@ -3101,6 +3101,75 @@ app.delete('/api/workflows/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// Run a workflow step (or entire workflow) on demand via sub-agent
+app.post('/api/workflows/:id/run', async (req, res) => {
+  try {
+    const workflows = loadWorkflows();
+    const wf = workflows.find(w => w.id === req.params.id);
+    if (!wf) return res.status(404).json({ error: 'Workflow not found' });
+
+    const { stepId } = req.body; // optional: run specific step, or all
+
+    // Load user config for template substitution
+    const configFile = path.join(WORKFLOWS_DIR, `.${wf.id}-config.json`);
+    let userConfig = {};
+    try {
+      const raw = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+      userConfig = raw.values || {};
+    } catch {}
+
+    // Merge defaults with user config
+    const resolvedConfig = {};
+    for (const [k, v] of Object.entries(wf.config || {})) {
+      resolvedConfig[k] = userConfig[k] ?? v.default;
+    }
+
+    // Get steps to run
+    let stepsToRun = wf.steps || [];
+    if (stepId) {
+      stepsToRun = stepsToRun.filter(s => s.id === stepId);
+      if (stepsToRun.length === 0) return res.status(404).json({ error: 'Step not found' });
+    }
+
+    // Replace {{config.xxx}} in task text
+    const resolveTpl = (text) => {
+      return text.replace(/\{\{config\.(\w+)\}\}/g, (_, key) => resolvedConfig[key] || key);
+    };
+
+    // Build combined task for sub-agent
+    const taskParts = stepsToRun.map((s, i) =>
+      `## Step ${i + 1}: ${s.name}\n${resolveTpl(s.task)}`
+    );
+    const fullTask = `# Workflow: ${wf.name}\n\n${taskParts.join('\n\n')}`;
+
+    // Spawn sub-agent
+    const spawnRes = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/sessions/spawn`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GATEWAY_TOKEN}`
+      },
+      body: JSON.stringify({
+        task: fullTask,
+        label: `workflow-${wf.id}${stepId ? `-${stepId}` : ''}`,
+        model: SUB_AGENT_MODEL,
+        runTimeoutSeconds: 300,
+      }),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (spawnRes.ok) {
+      const data = await spawnRes.json();
+      res.json({ ok: true, sessionKey: data.sessionKey, task: fullTask.substring(0, 200) });
+    } else {
+      res.json({ ok: true, message: 'Spawned (fire-and-forget)', task: fullTask.substring(0, 200) });
+    }
+  } catch (e) {
+    console.log('[Workflow run] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // SPA catch-all: serve index.html for all non-API routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
