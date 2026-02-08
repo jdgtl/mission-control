@@ -701,7 +701,9 @@ app.get('/api/cron/:id/runs', async (req, res) => {
 
     const data = await response.json();
     const result = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
-    res.json(result || []);
+    // Handle various response shapes
+    const entries = result?.details?.entries || result?.entries || (Array.isArray(result) ? result : []);
+    res.json(entries.slice(0, 10));
   } catch (error) {
     console.error('[Cron runs]', error.message);
     res.json([]);

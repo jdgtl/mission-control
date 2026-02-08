@@ -925,12 +925,12 @@ export default function Cron() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           {jobRuns.map((run: any, ri: number) => (
                             <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, fontSize: 12 }}>
-                              <span style={{ color: run.status === 'ok' || run.status === 'completed' ? '#32D74B' : run.status === 'error' ? '#FF453A' : '#FF9500', fontWeight: 600 }}>
+                              <span style={{ color: run.status === 'ok' || run.status === 'completed' ? '#32D74B' : run.status === 'error' ? '#FF453A' : '#FF9500', fontWeight: 600, flexShrink: 0 }}>
                                 {run.status === 'ok' || run.status === 'completed' ? '✓' : run.status === 'error' ? '✗' : '●'} {run.status || 'unknown'}
                               </span>
-                              <span style={{ color: 'rgba(255,255,255,0.5)' }}>{run.startedAt ? timeAgo(run.startedAt) : run.timestamp ? timeAgo(run.timestamp) : '—'}</span>
-                              {run.durationMs && <span style={{ color: 'rgba(255,255,255,0.4)' }}>{run.durationMs}ms</span>}
-                              {run.summary && <span style={{ color: 'rgba(255,255,255,0.6)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{run.summary}</span>}
+                              <span style={{ color: 'rgba(255,255,255,0.5)', flexShrink: 0 }}>{run.ts ? timeAgo(new Date(run.ts).toISOString()) : run.startedAt ? timeAgo(run.startedAt) : '—'}</span>
+                              {run.durationMs != null && <span style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>{run.durationMs}ms</span>}
+                              {run.summary && <span style={{ color: 'rgba(255,255,255,0.6)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={run.summary}>{run.summary.slice(0, 80)}{run.summary.length > 80 ? '...' : ''}</span>}
                             </div>
                           ))}
                         </div>
