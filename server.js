@@ -1773,15 +1773,20 @@ app.post('/api/agents/create', (req, res) => {
       return res.status(400).json({ error: 'name and model are required' });
     }
 
-    // Save to agents-custom.json file
+    const agentId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
+
+    // 1. Save to local agents-custom.json for MC display
     const agentsFile = path.join(__dirname, 'agents-custom.json');
     let agents = [];
-    try {
-      agents = JSON.parse(fs.readFileSync(agentsFile, 'utf8'));
-    } catch {}
+    try { agents = JSON.parse(fs.readFileSync(agentsFile, 'utf8')); } catch {}
+
+    // Don't add duplicates
+    if (agents.some(a => a.id === agentId)) {
+      return res.status(409).json({ error: `Agent "${agentId}" already exists` });
+    }
 
     const agent = {
-      id: `custom-${Date.now()}`,
+      id: agentId,
       name,
       description: description || '',
       model,
@@ -1794,7 +1799,40 @@ app.post('/api/agents/create', (req, res) => {
     agents.push(agent);
     fs.writeFileSync(agentsFile, JSON.stringify(agents, null, 2));
 
-    res.json({ ok: true, agent });
+    // 2. Create agent workspace directory
+    const agentDir = path.join(process.env.HOME || '/home/ubuntu', '.openclaw', 'agents', agentId, 'agent');
+    if (!fs.existsSync(agentDir)) {
+      fs.mkdirSync(agentDir, { recursive: true });
+      // Write AGENTS.md (system prompt)
+      const agentsMd = `# ${name}\n\n${description || ''}\n\n## Instructions\n\n${systemPrompt || `You are ${name}. ${description || ''}`}\n`;
+      fs.writeFileSync(path.join(agentDir, 'AGENTS.md'), agentsMd);
+    }
+
+    // 3. Register in OpenClaw config
+    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+      // Add agent definition
+      if (!config.agents) config.agents = {};
+      config.agents[agentId] = {
+        model: model,
+        description: description || name
+      };
+
+      // Add to main agent's spawnAllowlist
+      if (config.spawnAllowlist) {
+        if (!config.spawnAllowlist.includes(agentId)) {
+          config.spawnAllowlist.push(agentId);
+        }
+      } else {
+        config.spawnAllowlist = [agentId];
+      }
+
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    }
+
+    res.json({ ok: true, agent, message: `Agent "${name}" created and registered in OpenClaw. Restart gateway to activate.` });
   } catch (error) {
     console.error('[Create Agent]', error.message);
     res.status(500).json({ error: error.message });

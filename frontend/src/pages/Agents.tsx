@@ -404,7 +404,7 @@ export default function Agents() {
                 {
                   name: 'Code Reviewer',
                   description: 'Reviews PRs, finds bugs, suggests improvements',
-                  model: 'Claude Opus 4',
+                  model: 'Claude Opus 4.6',
                   modelId: 'us.anthropic.claude-opus-4-6-v1',
                   systemPrompt: 'You are an expert code reviewer. Analyze code for bugs, security vulnerabilities, performance issues, and adherence to best practices. Provide detailed, actionable feedback with specific suggestions for improvement.',
                   skills: ['read', 'write', 'edit', 'exec']
@@ -420,12 +420,12 @@ export default function Agents() {
                 {
                   name: 'Security Scanner',
                   description: 'Monitors bug bounties, scans for vulnerabilities',
-                  model: 'Claude Haiku 4',
+                  model: 'Claude Haiku 4.5',
                   modelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
                   systemPrompt: 'You are a security researcher focused on finding vulnerabilities and monitoring bug bounty programs. Analyze targets methodically, identify potential security weaknesses, and track new opportunities efficiently.',
                   skills: ['web_search', 'exec', 'read']
                 }
-              ].map((template, i) => (
+              ].filter(t => !agents?.some((a: any) => a.name === t.name)).map((template, i) => (
                 <motion.div
                   key={template.name}
                   initial={{ opacity: 0, y: 12, scale: 0.98 }}
