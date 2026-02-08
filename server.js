@@ -2078,10 +2078,7 @@ app.post('/api/skills/:name/install', async (req, res) => {
       if (!config.skills) config.skills = {};
       if (!config.skills.entries) config.skills.entries = {};
       if (!config.skills.entries[name]) {
-        config.skills.entries[name] = {
-          path: targetDir,
-          enabled: true
-        };
+        config.skills.entries[name] = {};
         fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
       }
     }
