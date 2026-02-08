@@ -154,6 +154,7 @@ export default function Workflows() {
                 padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
                 background: wf._enabled ? 'rgba(255,69,58,0.15)' : 'rgba(50,215,75,0.15)',
                 color: wf._enabled ? '#FF453A' : '#32D74B',
+                display: 'flex', alignItems: 'center', gap: 6,
               }}
             >
               {wf._enabled ? <><Pause size={14} /> Disable</> : <><Play size={14} /> Enable</>}
@@ -240,7 +241,7 @@ export default function Workflows() {
 
         {/* Config section */}
         <h2 style={{ fontSize: 16, fontWeight: 600, color: 'rgba(255,255,255,0.9)', margin: '24px 0 16px' }}>
-          <Settings size={16} style={{ marginRight: 8, verticalAlign: 'middle' }} />
+          <Settings size={16} style={{ marginRight: 8 }} />
           Configuration
         </h2>
 
@@ -259,9 +260,9 @@ export default function Workflows() {
             <motion.button
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
               onClick={() => openConfig(wf)}
-              style={{ marginTop: 16, padding: '8px 20px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 500 }}
+              style={{ marginTop: 16, padding: '8px 20px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}
             >
-              <Settings size={13} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Edit Configuration
+              <Settings size={13} /> Edit Configuration
             </motion.button>
           </GlassCard>
         ) : (
@@ -286,9 +287,9 @@ export default function Workflows() {
                 <motion.button
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                   onClick={() => saveConfig(wf)}
-                  style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: '#0A84FF', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+                  style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: '#0A84FF', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                 >
-                  <Check size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} /> Save
+                  <Check size={14} /> Save
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
@@ -307,9 +308,9 @@ export default function Workflows() {
           <motion.button
             whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }}
             onClick={() => deleteWorkflow(wf)}
-            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(255,69,58,0.3)', background: 'rgba(255,69,58,0.1)', color: '#FF453A', cursor: 'pointer', fontSize: 12, fontWeight: 500 }}
+            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(255,69,58,0.3)', background: 'rgba(255,69,58,0.1)', color: '#FF453A', cursor: 'pointer', fontSize: 12, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}
           >
-            <Trash2 size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} /> Delete Workflow
+            <Trash2 size={12} /> Delete Workflow
           </motion.button>
         </div>
       </div>
@@ -405,7 +406,7 @@ export default function Workflows() {
               onClick={() => setImporting(true)}
               style={{ padding: '10px 24px', borderRadius: 8, background: '#0A84FF', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14 }}
             >
-              <Plus size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Import Workflow
+              <Plus size={14} /> Import Workflow
             </motion.button>
           </div>
         </GlassCard>

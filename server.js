@@ -2050,12 +2050,34 @@ app.post('/api/skills/:name/toggle', async (req, res) => {
 });
 
 app.post('/api/skills/:name/install', async (req, res) => {
-  // Simplified install - just add to config
   try {
     const { name } = req.params;
-    res.json({ success: true, message: 'Skill installation not implemented' });
+    const { repoUrl } = req.body;
+    const skillsDir = path.join(process.env.HOME || '/home/ubuntu', 'clawd', 'skills');
+
+    // Ensure skills directory exists
+    if (!fs.existsSync(skillsDir)) fs.mkdirSync(skillsDir, { recursive: true });
+
+    const targetDir = path.join(skillsDir, name);
+
+    if (fs.existsSync(targetDir)) {
+      return res.json({ success: true, message: `Skill "${name}" already installed` });
+    }
+
+    // If repo URL provided, clone it
+    if (repoUrl) {
+      const { execSync } = require('child_process');
+      execSync(`git clone --depth 1 ${repoUrl} ${targetDir}`, { timeout: 30000 });
+      res.json({ success: true, message: `Skill "${name}" installed from ${repoUrl}` });
+    } else {
+      // Create a minimal skill skeleton
+      fs.mkdirSync(targetDir, { recursive: true });
+      fs.writeFileSync(path.join(targetDir, 'SKILL.md'), `# ${name}\n\nSkill installed via Mission Control.\n\n## Usage\n\nConfigure this skill as needed.\n`);
+      res.json({ success: true, message: `Skill "${name}" created (skeleton). Add your SKILL.md content.` });
+    }
   } catch (error) {
-    res.status(500).json({ error: 'Failed to install skill' });
+    console.log('[Skills install] Error:', error.message);
+    res.status(500).json({ error: `Failed to install: ${error.message}` });
   }
 });
 
