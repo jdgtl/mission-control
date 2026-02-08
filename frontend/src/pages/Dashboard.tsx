@@ -209,7 +209,7 @@ export default function Dashboard() {
 
   // Use detected agent name from OpenClaw if showing default "Mission Control"
   const displayName = agent.name === 'Mission Control' 
-    ? 'Zinbot' // Default to detected name or fallback
+    ? 'Agent' // Default to detected name or fallback
     : agent.name
 
   return (

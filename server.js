@@ -1371,17 +1371,17 @@ app.get('/api/agents', async (req, res) => {
       customAgents = JSON.parse(fs.readFileSync(customAgentsFile, 'utf8'));
     } catch {}
 
-    // Zinbot (primary agent) = main session
+    // Primary agent) = main session
     const mainSession = sessions.find(s => s.key === 'agent:main:main');
     const activeSessions = sessions.filter(s => (s.totalTokens || 0) > 0);
 
     // Build agents list
     const agents = [];
 
-    // Primary: Zinbot
+    // Primary agent
     agents.push({
       id: 'zinbot',
-      name: 'Zinbot',
+      name: agentName || 'Agent',
       role: 'Commander',
       avatar: '🤖',
       status: 'active',
@@ -1478,7 +1478,7 @@ app.get('/api/agents', async (req, res) => {
     console.error('[Agents API]', e.message);
     res.json({
       agents: [
-        { id: 'zinbot', name: 'Zinbot', role: 'Commander', avatar: '🤖', status: 'active', model: 'Claude Opus 4.6', description: 'Primary agent (session data unavailable)', lastActive: new Date().toISOString(), totalTokens: 0 }
+        { id: 'zinbot', name: agentName || 'Agent', role: 'Commander', avatar: '🤖', status: 'active', model: 'Claude Opus 4.6', description: 'Primary agent (session data unavailable)', lastActive: new Date().toISOString(), totalTokens: 0 }
       ],
       conversations: [],
       error: e.message

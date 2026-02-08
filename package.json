@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "macOS-native dashboard for OpenClaw AI agents",
   "main": "server.js",
-  "author": "Kevin El-Zarka <kevin.elzarka@gmail.com>",
+  "author": "OpenClaw Community",
   "license": "BSL-1.1",
   "keywords": ["openclaw", "dashboard", "ai", "agent", "mission-control"],
   "scripts": {
