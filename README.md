@@ -187,8 +187,16 @@ Mission Control is free and open-source under the BSL 1.1 license.
 If it's useful to you, consider:
 - ⭐ **Starring** this repo
 - 🐛 **Reporting bugs** or **suggesting features**
-- ☕ **[Buy me a coffee](https://ko-fi.com/kevinelzarka)** to keep development going
+- 💰 **[Donate via PayPal](https://paypal.me/TaleForgeV1)** to keep development going
 - 📧 **Questions?** kevin.elzarka@gmail.com
+
+---
+
+## 🔗 Links
+
+- 🏠 **[Tale Forge](https://tale-forge.app)** — AI storytelling for kids (our main project)
+- 💼 **[LinkedIn](https://www.linkedin.com/in/kevin-el-zarka/)** — Connect with the creator
+- 🐙 **[GitHub](https://github.com/Jzineldin)** — More projects
 
 ---
 
