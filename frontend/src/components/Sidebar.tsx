@@ -15,7 +15,8 @@ import {
   Cloud,
   Command,
   Zap,
-  FileText
+  FileText,
+  GitBranch
 } from 'lucide-react'
 
 interface McConfig {
@@ -50,6 +51,7 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/workshop', icon: Hammer, label: 'Workshop', module: 'workshop' },
       { to: '/scout', icon: Radar, label: 'Scout', module: 'scout' },
+      { to: '/workflows', icon: GitBranch, label: 'Workflows', module: 'dashboard' },
     ]
   },
   {

@@ -2980,6 +2980,127 @@ app.post('/api/settings/import', upload.single('config'), (req, res) => {
   }
 });
 
+// === WORKFLOWS ===
+const WORKFLOWS_DIR = path.join(__dirname, 'workflows');
+
+function loadWorkflows() {
+  const workflows = [];
+  try {
+    if (!fs.existsSync(WORKFLOWS_DIR)) fs.mkdirSync(WORKFLOWS_DIR, { recursive: true });
+    const files = fs.readdirSync(WORKFLOWS_DIR).filter(f => f.endsWith('.json') || f.endsWith('.yaml'));
+    for (const file of files) {
+      try {
+        const raw = fs.readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8');
+        const wf = JSON.parse(raw);
+        // Load user config overrides if they exist
+        const configFile = path.join(WORKFLOWS_DIR, `.${wf.id}-config.json`);
+        if (fs.existsSync(configFile)) {
+          const userConfig = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+          wf._userConfig = userConfig.values || {};
+          wf._enabled = userConfig.enabled !== false;
+          wf._enabledSteps = userConfig.enabledSteps || [];
+          wf._metrics = userConfig.metrics || {};
+        } else {
+          wf._enabled = false;
+          wf._userConfig = {};
+          wf._enabledSteps = [];
+          wf._metrics = {};
+        }
+        workflows.push(wf);
+      } catch (e) {
+        console.log(`[Workflows] Failed to load ${file}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.log('[Workflows] Error reading directory:', e.message);
+  }
+  return workflows;
+}
+
+// List all workflows
+app.get('/api/workflows', (req, res) => {
+  const workflows = loadWorkflows();
+  res.json({ workflows });
+});
+
+// Get single workflow
+app.get('/api/workflows/:id', (req, res) => {
+  const workflows = loadWorkflows();
+  const wf = workflows.find(w => w.id === req.params.id);
+  if (!wf) return res.status(404).json({ error: 'Workflow not found' });
+  res.json(wf);
+});
+
+// Enable/disable workflow + save config
+app.post('/api/workflows/:id/configure', (req, res) => {
+  const workflows = loadWorkflows();
+  const wf = workflows.find(w => w.id === req.params.id);
+  if (!wf) return res.status(404).json({ error: 'Workflow not found' });
+
+  const { enabled, values, enabledSteps } = req.body;
+  const configFile = path.join(WORKFLOWS_DIR, `.${wf.id}-config.json`);
+
+  let existing = {};
+  try { existing = JSON.parse(fs.readFileSync(configFile, 'utf8')); } catch {}
+
+  const updated = {
+    ...existing,
+    enabled: enabled !== undefined ? enabled : existing.enabled,
+    values: values || existing.values || {},
+    enabledSteps: enabledSteps || existing.enabledSteps || [],
+    updatedAt: new Date().toISOString(),
+  };
+
+  fs.writeFileSync(configFile, JSON.stringify(updated, null, 2));
+  res.json({ ok: true, config: updated });
+});
+
+// Update workflow metrics
+app.post('/api/workflows/:id/metrics', (req, res) => {
+  const { metrics } = req.body;
+  const configFile = path.join(WORKFLOWS_DIR, `.${req.params.id}-config.json`);
+  let existing = {};
+  try { existing = JSON.parse(fs.readFileSync(configFile, 'utf8')); } catch {}
+  existing.metrics = { ...(existing.metrics || {}), ...metrics };
+  fs.writeFileSync(configFile, JSON.stringify(existing, null, 2));
+  res.json({ ok: true });
+});
+
+// Import workflow from URL or raw JSON
+app.post('/api/workflows/import', async (req, res) => {
+  try {
+    const { url, workflow: rawWorkflow } = req.body;
+    let wf;
+    if (url) {
+      const resp = await fetch(url);
+      wf = await resp.json();
+    } else if (rawWorkflow) {
+      wf = typeof rawWorkflow === 'string' ? JSON.parse(rawWorkflow) : rawWorkflow;
+    } else {
+      return res.status(400).json({ error: 'Provide url or workflow' });
+    }
+
+    if (!wf.id || !wf.name || !wf.steps) {
+      return res.status(400).json({ error: 'Invalid workflow: needs id, name, steps' });
+    }
+
+    const filePath = path.join(WORKFLOWS_DIR, `${wf.id}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(wf, null, 2));
+    res.json({ ok: true, workflow: wf });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Delete workflow
+app.delete('/api/workflows/:id', (req, res) => {
+  const filePath = path.join(WORKFLOWS_DIR, `${req.params.id}.json`);
+  const configPath = path.join(WORKFLOWS_DIR, `.${req.params.id}-config.json`);
+  try { fs.unlinkSync(filePath); } catch {}
+  try { fs.unlinkSync(configPath); } catch {}
+  res.json({ ok: true });
+});
+
 // SPA catch-all: serve index.html for all non-API routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));

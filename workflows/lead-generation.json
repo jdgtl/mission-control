@@ -1,0 +1,91 @@
+{
+  "id": "lead-generation",
+  "name": "Lead Generation",
+  "icon": "🎯",
+  "description": "Find and contact local businesses that need websites. Automated prospecting, enrichment, and outreach pipeline.",
+  "author": "zinbot",
+  "version": "1.0.0",
+  "category": "Sales",
+  "tags": ["leads", "outreach", "sales", "local-business"],
+
+  "config": {
+    "region": {
+      "label": "Target Region",
+      "type": "string",
+      "default": "Småland, Sweden",
+      "description": "Geographic area to search for businesses"
+    },
+    "email_from": {
+      "label": "Sender Email",
+      "type": "string",
+      "default": "",
+      "description": "Email address to send outreach from"
+    },
+    "daily_limit": {
+      "label": "Daily Email Limit",
+      "type": "number",
+      "default": 10,
+      "description": "Maximum emails to send per day"
+    },
+    "categories": {
+      "label": "Business Categories",
+      "type": "string",
+      "default": "restaurant, hair salon, mechanic, dentist",
+      "description": "Comma-separated business types to target"
+    }
+  },
+
+  "steps": [
+    {
+      "id": "scout-leads",
+      "name": "Scout for Leads",
+      "icon": "🔍",
+      "description": "Search for businesses without websites in target region",
+      "type": "cron",
+      "schedule": "0 8 * * 1-5",
+      "task": "Search for {{config.categories}} businesses in {{config.region}} that have no website or a very outdated one. Find at least 10 new leads. Save to leads CSV with: name, phone, email, address, category. Verify each business actually lacks a proper website before adding."
+    },
+    {
+      "id": "enrich-contacts",
+      "name": "Enrich Contacts",
+      "icon": "📧",
+      "description": "Verify emails and find phone numbers for new leads",
+      "type": "cron",
+      "schedule": "0 9 * * 1-5",
+      "task": "Review leads found today. For each: verify email exists (use Hunter.io or similar), find phone number, check Google Maps for reviews and opening hours. Update lead records with enriched data. Mark unverifiable leads."
+    },
+    {
+      "id": "draft-outreach",
+      "name": "Draft Outreach",
+      "icon": "✍️",
+      "description": "Generate personalized email drafts for approved leads",
+      "type": "cron",
+      "schedule": "0 10 * * 1-5",
+      "task": "For leads marked as ready, draft personalized cold emails. Reference their specific business, location, and why a website would help them. Keep it short (3-4 sentences), friendly, and local. Save drafts for review. Max {{config.daily_limit}} per day."
+    },
+    {
+      "id": "send-outreach",
+      "name": "Send Outreach",
+      "icon": "📤",
+      "description": "Send approved outreach emails (requires manual approval)",
+      "type": "manual",
+      "task": "Review drafted emails and send approved ones via {{config.email_from}}. Log all sent emails with timestamp and recipient. Never send without explicit approval."
+    },
+    {
+      "id": "track-responses",
+      "name": "Track Responses",
+      "icon": "📊",
+      "description": "Check for replies and update lead status",
+      "type": "cron",
+      "schedule": "0 14 * * 1-5",
+      "task": "Check inbox for replies to outreach emails. Categorize: interested, not interested, bounced. Update lead status. Flag hot leads (interested) for immediate follow-up notification."
+    }
+  ],
+
+  "metrics": [
+    { "id": "leads_found", "label": "Leads Found", "icon": "🎯" },
+    { "id": "emails_sent", "label": "Emails Sent", "icon": "📧" },
+    { "id": "responses", "label": "Responses", "icon": "💬" },
+    { "id": "conversion_rate", "label": "Conversion Rate", "icon": "📈", "format": "percent" }
+  ]
+}

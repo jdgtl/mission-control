@@ -1,0 +1,76 @@
+{
+  "id": "bug-bounty-hunter",
+  "name": "Bug Bounty Hunter",
+  "icon": "🐛",
+  "description": "Automated security research pipeline. Discover programs, run recon, organize findings, and track submissions.",
+  "author": "zinbot",
+  "version": "1.0.0",
+  "category": "Security",
+  "tags": ["security", "bug-bounty", "hacking", "recon"],
+
+  "config": {
+    "platforms": {
+      "label": "Bug Bounty Platforms",
+      "type": "string",
+      "default": "HackerOne, Bugcrowd",
+      "description": "Platforms to monitor for programs"
+    },
+    "focus_areas": {
+      "label": "Focus Areas",
+      "type": "string",
+      "default": "API security, CORS, SSRF, authentication",
+      "description": "Vulnerability types to focus on"
+    },
+    "min_bounty": {
+      "label": "Minimum Bounty",
+      "type": "number",
+      "default": 500,
+      "description": "Minimum bounty amount to target"
+    }
+  },
+
+  "steps": [
+    {
+      "id": "discover-programs",
+      "name": "Discover Programs",
+      "icon": "🔍",
+      "description": "Find new and updated bug bounty programs",
+      "type": "cron",
+      "schedule": "0 9 * * 1,4",
+      "task": "Check {{config.platforms}} for new programs or updated scopes. Filter for programs with bounties >= ${{config.min_bounty}}. Focus on {{config.focus_areas}}. Save interesting programs with scope details."
+    },
+    {
+      "id": "run-recon",
+      "name": "Run Recon",
+      "icon": "🔎",
+      "description": "Automated reconnaissance on target programs",
+      "type": "cron",
+      "schedule": "0 10 * * 1-5",
+      "task": "For active targets, enumerate subdomains, check for exposed APIs, test CORS configurations, look for information disclosure. Document all findings with evidence. Flag potential vulnerabilities."
+    },
+    {
+      "id": "write-report",
+      "name": "Write Report",
+      "icon": "📝",
+      "description": "Draft vulnerability reports for findings",
+      "type": "manual",
+      "task": "For confirmed vulnerabilities, draft a professional report: title, severity, description, steps to reproduce, impact, remediation. Include screenshots/evidence. Format for {{config.platforms}} submission."
+    },
+    {
+      "id": "track-submissions",
+      "name": "Track Submissions",
+      "icon": "📊",
+      "description": "Monitor report status and follow up",
+      "type": "cron",
+      "schedule": "0 14 * * 1-5",
+      "task": "Check status of submitted reports on {{config.platforms}}. Follow up on reports pending > 7 days. Track: submitted, triaged, resolved, bounty paid. Calculate total earnings."
+    }
+  ],
+
+  "metrics": [
+    { "id": "programs_scouted", "label": "Programs Scouted", "icon": "🎯" },
+    { "id": "vulns_found", "label": "Vulns Found", "icon": "🐛" },
+    { "id": "reports_submitted", "label": "Reports Submitted", "icon": "📝" },
+    { "id": "bounties_earned", "label": "Bounties Earned", "icon": "💰", "format": "currency" }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "id": "content-pipeline",
+  "name": "Content Pipeline",
+  "icon": "📝",
+  "description": "Automated content creation and publishing workflow. Research topics, draft posts, schedule publishing across platforms.",
+  "author": "community",
+  "version": "1.0.0",
+  "category": "Marketing",
+  "tags": ["content", "social-media", "writing", "marketing"],
+
+  "config": {
+    "topics": {
+      "label": "Content Topics",
+      "type": "string",
+      "default": "AI, startups, technology",
+      "description": "Comma-separated topics to write about"
+    },
+    "platforms": {
+      "label": "Publishing Platforms",
+      "type": "string",
+      "default": "LinkedIn, Twitter",
+      "description": "Where to publish content"
+    },
+    "posts_per_week": {
+      "label": "Posts Per Week",
+      "type": "number",
+      "default": 3,
+      "description": "Target number of posts per week"
+    },
+    "tone": {
+      "label": "Writing Tone",
+      "type": "string",
+      "default": "professional but approachable",
+      "description": "Desired tone for content"
+    }
+  },
+
+  "steps": [
+    {
+      "id": "research-topics",
+      "name": "Research Topics",
+      "icon": "🔍",
+      "description": "Scout trending topics and content ideas",
+      "type": "cron",
+      "schedule": "0 7 * * 1",
+      "task": "Research trending topics in {{config.topics}}. Find 10 content ideas for the week. Check what's performing well on {{config.platforms}}. Save ideas with angles and hooks."
+    },
+    {
+      "id": "draft-content",
+      "name": "Draft Content",
+      "icon": "✍️",
+      "description": "Write {{config.posts_per_week}} posts per week",
+      "type": "cron",
+      "schedule": "0 8 * * 1,3,5",
+      "task": "Draft a post for {{config.platforms}} about {{config.topics}}. Tone: {{config.tone}}. Include a hook, value, and CTA. Save as draft for review."
+    },
+    {
+      "id": "review-publish",
+      "name": "Review & Publish",
+      "icon": "📤",
+      "description": "Review drafts and publish approved content",
+      "type": "manual",
+      "task": "Present drafted content for approval. On approval, publish to {{config.platforms}}. Track post URLs and engagement metrics."
+    },
+    {
+      "id": "track-engagement",
+      "name": "Track Engagement",
+      "icon": "📊",
+      "description": "Monitor post performance and adjust strategy",
+      "type": "cron",
+      "schedule": "0 17 * * 5",
+      "task": "Check engagement metrics for all published content this week. Report: impressions, likes, comments, shares. Identify top-performing content and why. Suggest adjustments for next week."
+    }
+  ],
+
+  "metrics": [
+    { "id": "posts_published", "label": "Posts Published", "icon": "📝" },
+    { "id": "total_impressions", "label": "Impressions", "icon": "👀" },
+    { "id": "engagement_rate", "label": "Engagement", "icon": "📈", "format": "percent" },
+    { "id": "followers_gained", "label": "New Followers", "icon": "👥" }
+  ]
+}

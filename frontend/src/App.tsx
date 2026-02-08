@@ -20,6 +20,7 @@ const Workshop = lazy(() => import('./pages/Workshop'))
 const Costs = lazy(() => import('./pages/Costs'))
 const Cron = lazy(() => import('./pages/Cron'))
 const Scout = lazy(() => import('./pages/Scout'))
+const Workflows = lazy(() => import('./pages/Workflows'))
 const Memory = lazy(() => import('./pages/Memory'))
 const Agents = lazy(() => import('./pages/Agents'))
 const Settings = lazy(() => import('./pages/Settings'))
@@ -160,6 +161,7 @@ export default function App() {
                 <Route path="/costs" element={<ErrorBoundary><Costs /></ErrorBoundary>} />
                 <Route path="/cron" element={<ErrorBoundary><Cron /></ErrorBoundary>} />
                 <Route path="/scout" element={<ErrorBoundary><Scout /></ErrorBoundary>} />
+                <Route path="/workflows" element={<ErrorBoundary><Workflows /></ErrorBoundary>} />
                 <Route path="/memory" element={<ErrorBoundary><Memory /></ErrorBoundary>} />
                 <Route path="/agents" element={<ErrorBoundary><Agents /></ErrorBoundary>} />
                 <Route path="/settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
