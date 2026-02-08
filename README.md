@@ -2,7 +2,13 @@
 
 A macOS-native-feel dashboard for monitoring and controlling your [OpenClaw](https://openclaw.ai) AI agent.
 
-![Mission Control](screenshot.png)
+![Dashboard](screenshot.png)
+
+### Cron Monitor
+![Cron Monitor](screenshot-cron.png)
+
+### Scout Engine
+![Scout Engine](screenshot-scout.png)
 
 ## Features
 
