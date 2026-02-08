@@ -617,7 +617,7 @@ export default function Costs() {
                   gap: m ? '2px' : '4px', 
                   paddingTop: '20px' 
                 }}>
-                  {awsCosts.daily.map((day, i) => {
+                  {awsCosts.daily.map((day, _i) => {
                     const maxCost = Math.max(...awsCosts.daily.map(d => d.cost), 10)
                     const height = Math.max((day.cost / maxCost) * (m ? 140 : 200), 2)
                     return (
@@ -686,7 +686,7 @@ export default function Costs() {
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: m ? '12px' : '16px' }}>
                 {hasAwsData && awsCosts ? (
-                  awsCosts.services.slice(0, m ? 5 : 8).map((service, i) => {
+                  awsCosts.services.slice(0, m ? 5 : 8).map((service, _i) => {
                     const percentage = (service.cost / awsCosts.total) * 100
                     return (
                       <div key={service.name} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -728,7 +728,7 @@ export default function Costs() {
                   // Token-based breakdown by channel/session type
                   Object.entries({
                     'OpenClaw Sessions': totalTokens > 0 ? estimateCost(totalTokens, 'sonnet') : 0
-                  }).map(([name, cost], i) => {
+                  }).map(([name, cost], _i) => {
                     if (cost === 0) return null
                     return (
                       <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -787,7 +787,7 @@ export default function Costs() {
               gridTemplateColumns: m ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))', 
               gap: m ? '12px' : '16px' 
             }}>
-              {topSessions.length > 0 ? topSessions.map((session, i) => (
+              {topSessions.length > 0 ? topSessions.map((session, _i) => (
                 <div key={session.sessionId} style={{ 
                   padding: m ? '12px' : '16px', 
                   background: 'rgba(255,255,255,0.05)', 

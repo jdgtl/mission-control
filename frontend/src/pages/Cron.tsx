@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Clock, Play, Pause, AlertTriangle, CheckCircle, XCircle, Plus, Trash2, RotateCcw } from 'lucide-react'
+import { Clock, Play, Pause, AlertTriangle, Plus, Trash2, RotateCcw } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import PageTransition from '../components/PageTransition'
 import { useIsMobile } from '../lib/useIsMobile'
@@ -7,12 +7,6 @@ import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
 import { useApi, timeAgo, formatDate } from '../lib/hooks'
 
-const statusIcons: Record<string, any> = {
-  success: CheckCircle,
-  failed: XCircle,
-  ok: CheckCircle,
-  error: XCircle,
-}
 
 // Cron expression presets
 const CRON_PRESETS = [
@@ -750,7 +744,7 @@ export default function Cron() {
                         </div>
                         <ToggleSwitch 
                           enabled={job.enabled} 
-                          onChange={(enabled) => handleToggle(job.id, job.enabled)} 
+                          onChange={(_enabled) => handleToggle(job.id, job.enabled)} 
                         />
                       </div>
                       
@@ -863,7 +857,7 @@ export default function Cron() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <ToggleSwitch 
                         enabled={job.enabled} 
-                        onChange={(enabled) => handleToggle(job.id, job.enabled)} 
+                        onChange={(_enabled) => handleToggle(job.id, job.enabled)} 
                       />
                       <StatusBadge status={job.enabled ? job.status : 'disabled'} />
                     </div>

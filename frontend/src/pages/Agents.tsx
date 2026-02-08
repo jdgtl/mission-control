@@ -96,10 +96,10 @@ export default function Agents() {
   const getSessionGroups = () => {
     const sessions = sessionsData?.sessions || []
     const groups = {
-      main: { sessions: [], totalTokens: 0, name: 'Main Agent', icon: '👤' },
-      discord: { sessions: [], totalTokens: 0, name: 'Discord Channels', icon: '💬' },
-      subagents: { sessions: [], totalTokens: 0, name: 'Sub-agents', icon: '🤖' },
-      web: { sessions: [], totalTokens: 0, name: 'Web Interfaces', icon: '🌐' }
+      main: { sessions: [] as any[], totalTokens: 0, name: 'Main Agent', icon: '👤' },
+      discord: { sessions: [] as any[], totalTokens: 0, name: 'Discord Channels', icon: '💬' },
+      subagents: { sessions: [] as any[], totalTokens: 0, name: 'Sub-agents', icon: '🤖' },
+      web: { sessions: [] as any[], totalTokens: 0, name: 'Web Interfaces', icon: '🌐' }
     }
     
     sessions.forEach((s: any) => {
@@ -134,7 +134,7 @@ export default function Agents() {
     )
   }
 
-  const { agents, conversations } = data
+  const { agents } = data
   const sessionGroups = getSessionGroups()
   const selected = agents.find((a: any) => a.id === selectedAgent)
 
@@ -627,7 +627,7 @@ export default function Agents() {
                 <div style={{ marginBottom: 32 }}>
                   <h3 style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.65)', marginBottom: 12 }}>Quick Start Templates</h3>
                   <div style={{ display: 'grid', gridTemplateColumns: m ? '1fr' : 'repeat(3, 1fr)', gap: 12 }}>
-                    {templates.map((template, i) => (
+                    {templates.map((template, _i) => (
                       <motion.div
                         key={template.name}
                         whileHover={{ scale: 1.02 }}

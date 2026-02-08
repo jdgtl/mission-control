@@ -70,10 +70,10 @@ export default function NotificationSystem({ maxVisible = 5 }: NotificationSyste
     const timers: ReturnType<typeof setTimeout>[] = []
     
     notifications.forEach(notification => {
-      if (notification.duration > 0) {
+      if (notification.duration! > 0) {
         const timer = setTimeout(() => {
           _setNotifications(prev => prev.filter(n => n.id !== notification.id))
-        }, notification.duration)
+        }, notification.duration!)
         timers.push(timer)
       }
     })
@@ -100,7 +100,7 @@ export default function NotificationSystem({ maxVisible = 5 }: NotificationSyste
       pointerEvents: 'none'
     }}>
       <AnimatePresence mode="popLayout">
-        {visibleNotifications.map((notification, index) => {
+        {visibleNotifications.map((notification, _index) => {
           const Icon = iconMap[notification.type]
           const color = colorMap[notification.type]
           
@@ -179,7 +179,7 @@ export default function NotificationSystem({ maxVisible = 5 }: NotificationSyste
               </div>
               
               {/* Progress bar for timed notifications */}
-              {notification.duration > 0 && (
+              {notification.duration! > 0 && (
                 <motion.div
                   style={{
                     height: 2,
@@ -192,7 +192,7 @@ export default function NotificationSystem({ maxVisible = 5 }: NotificationSyste
                   <motion.div
                     initial={{ width: '100%' }}
                     animate={{ width: '0%' }}
-                    transition={{ duration: notification.duration / 1000, ease: 'linear' }}
+                    transition={{ duration: notification.duration! / 1000, ease: 'linear' }}
                     style={{
                       height: '100%',
                       background: color,

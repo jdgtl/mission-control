@@ -4,7 +4,7 @@ import {
   Activity, Cpu, MessageSquare, Database, Radio, Heart,
   BarChart3, Mail, Calendar, CheckCircle, Search,
   Clock, Loader2, ArrowRight, Bell, Sun, Sunset, Moon, Timer,
-  WifiOff, RefreshCw, ExternalLink
+  WifiOff, RefreshCw
 } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
 import GlassCard from '../components/GlassCard'
@@ -135,7 +135,7 @@ function StatusBriefing() {
   const { data: costsData } = useApi<any>('/api/costs', 60000)
   const { data: statusData } = useApi<any>('/api/status', 30000)
 
-  const handleQuickAction = async (endpoint: string, label: string) => {
+  const handleQuickAction = async (endpoint: string, _label: string) => {
     if (loading) return
 
     // All quick actions: open chat widget with auto-send
@@ -446,7 +446,7 @@ export default function Dashboard() {
                 {/* Last Active timestamp */}
                 {sessions.length > 0 && (
                   <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
-                    Last active: {timeAgo(sessions.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())[0]?.updatedAt || '')}
+                    Last active: {timeAgo(sessions.sort((a: any, b: any) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())[0]?.updatedAt || '')}
                   </p>
                 )}
               </div>
@@ -542,7 +542,7 @@ export default function Dashboard() {
                         and cron runs here.
                       </p>
                     </div>
-                  ) : feed.map((item: any, i: number) => {
+                  ) : feed.map((item: any, _i: number) => {
                     const Icon = feedIcons[item.icon] || Activity
                     const color = feedColors[item.type] || '#8E8E93'
                     const isRunning = item.type === 'task_running'

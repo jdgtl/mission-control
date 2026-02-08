@@ -15,12 +15,6 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (match) => htmlEntities[match])
 }
 
-// Extract language from code fence
-function getLanguage(fence: string): string {
-  const match = fence.match(/^```(\w+)?\s*\n/)
-  return match?.[1] || ''
-}
-
 // Render fenced code blocks with styling and copy button placeholder
 function renderCodeBlock(code: string, language: string): string {
   const escapedCode = escapeHtml(code)
@@ -111,7 +105,7 @@ export function renderMarkdown(text: string): string {
   
   // Step 2: Handle fenced code blocks (```...```)
   // This must be done before other processing to avoid conflicts
-  processed = processed.replace(/```(\w+)?\s*\n([\s\S]*?)\n```/g, (match, language, code) => {
+  processed = processed.replace(/```(\w+)?\s*\n([\s\S]*?)\n```/g, (_match, language, code) => {
     return renderCodeBlock(code, language || '')
   })
   
@@ -142,7 +136,7 @@ export function renderMarkdownWidget(text: string): string {
   let processed = escapeHtml(text)
   
   // Step 2: Handle fenced code blocks with smaller styling
-  processed = processed.replace(/```(\w+)?\s*\n([\s\S]*?)\n```/g, (match, language, code) => {
+  processed = processed.replace(/```(\w+)?\s*\n([\s\S]*?)\n```/g, (_match, language, code) => {
     const escapedCode = escapeHtml(code)
     const langLabel = language ? `<span style="font-size:9px;opacity:0.5;">${language}</span>` : ''
     

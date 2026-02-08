@@ -18,67 +18,11 @@ interface OpenClawConfig {
 
 export default function Settings() {
   const isMobile = useIsMobile()
-  const { data: configData, refetch } = useApi<OpenClawConfig>('/api/settings')
-  const [selectedModel, setSelectedModel] = useState<string>('')
-  const [showDropdown, setShowDropdown] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
-
-  const { data: modelsData } = useApi<{ id: string; name: string }[]>('/api/models')
-
-  const availableModels = (modelsData || []).map(m => ({
-    id: m.id,
-    name: m.name,
-    description: m.name.includes('Opus') ? 'Most capable model' : m.name.includes('Sonnet') ? 'Balanced performance' : 'Fast and efficient',
-  }))
+  const { data: configData } = useApi<OpenClawConfig>('/api/settings')
 
   useEffect(() => {
-    if (configData?.model) {
-      setSelectedModel(configData.model)
-    }
+    // Settings data loaded, ready to render
   }, [configData])
-
-  const handleModelSwitch = async () => {
-    if (selectedModel === configData?.model) return
-
-    setSaving(true)
-    setSaveStatus('idle')
-
-    try {
-      const response = await fetch('/api/model', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: selectedModel })
-      })
-
-      if (response.ok) {
-        setSaveStatus('success')
-        setTimeout(() => setSaveStatus('idle'), 3000)
-        refetch()
-      } else {
-        setSaveStatus('error')
-        setTimeout(() => setSaveStatus('idle'), 3000)
-      }
-    } catch (error) {
-      setSaveStatus('error')
-      setTimeout(() => setSaveStatus('idle'), 3000)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const getCurrentModelName = () => {
-    if (!selectedModel) return 'Select Model'
-    const model = availableModels.find(m => m.id === selectedModel)
-    if (model) return model.name
-    // Fallback: extract a readable name from the model ID
-    const cleaned = selectedModel
-      .replace(/^(us\.)?anthropic\./, '')
-      .replace(/-v\d.*$/, '')
-      .replace(/-/g, ' ')
-      .replace(/\b\w/g, c => c.toUpperCase())
-    return cleaned || selectedModel
-  }
 
   return (
     <PageTransition>

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
-  Rocket, MessageCircle, Hammer, Radar, DollarSign, Clock,
+  Rocket, MessageCircle, Hammer, DollarSign, Clock,
   Brain, Settings, ChevronRight, X, CheckCircle, Sparkles, Zap
 } from 'lucide-react'
 
