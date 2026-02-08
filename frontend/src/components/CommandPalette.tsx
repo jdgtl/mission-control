@@ -14,8 +14,6 @@ import {
   Puzzle,
   Cloud,
   Plus,
-  Zap,
-  Activity,
   Heart
 } from 'lucide-react'
 import { useIsMobile } from '../lib/useIsMobile'

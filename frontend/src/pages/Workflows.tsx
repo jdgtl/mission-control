@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Play, Pause, Settings, Download, Trash2, ExternalLink, Clock, ChevronRight, Check, X, Plus } from 'lucide-react'
+import { ArrowLeft, Play, Pause, Settings, Download, Trash2, Clock, ChevronRight, Check, X, Plus } from 'lucide-react'
 import GlassCard from '../components/GlassCard'
 
 const useIsMobile = () => {

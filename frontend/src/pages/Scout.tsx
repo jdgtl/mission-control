@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Radar, SortDesc, X, Rocket, Shield, Code, Briefcase, GraduationCap, DollarSign, Search, Settings2, HelpCircle, Info, Plus, Trash2, Save } from 'lucide-react'
+import { Radar, SortDesc, X, Rocket, Shield, Code, Briefcase, GraduationCap, DollarSign, Search, Settings2, Info, Plus, Trash2, Save } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import { useApi, timeAgo } from '../lib/hooks'
 import { addNotification } from '../components/NotificationSystem'
-import SwipeableCard from '../components/SwipeableCard'
 
 const scoreColor = (score: number) => {
   if (score >= 85) return '#32D74B'

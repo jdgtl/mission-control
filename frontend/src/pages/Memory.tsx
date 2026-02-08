@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Brain, FileText, Clock, Search, ArrowLeft, Database, HardDrive, Calendar, Settings2, User, Heart, Pencil, Eye, Save, X } from 'lucide-react'
+import { Brain, FileText, Search, ArrowLeft, Database, HardDrive, Calendar, Settings2, User, Heart, Pencil, Save, X } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
 import GlassCard from '../components/GlassCard'
 import AnimatedCounter from '../components/AnimatedCounter'

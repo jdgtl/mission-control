@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Settings2, ChevronDown, Save, RefreshCw, Shield, Database, Cpu, Globe, Download, Upload, Clock, Zap, DollarSign, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { Settings2, Save, RefreshCw, Shield, Database, Globe, Download, Upload, Clock, Zap, DollarSign, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
 import { useIsMobile } from '../lib/useIsMobile'
 import { useApi } from '../lib/hooks'

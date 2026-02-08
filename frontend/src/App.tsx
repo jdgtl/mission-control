@@ -9,7 +9,6 @@ import CommandPalette from './components/CommandPalette'
 import KeyboardShortcuts from './components/KeyboardShortcuts'
 import NotificationSystem from './components/NotificationSystem'
 import ErrorBoundary from './components/ErrorBoundary'
-import ToastProvider from './components/ToastProvider'
 import { ToastContainer } from './components/ToastSystem'
 
 // Lazy load all pages

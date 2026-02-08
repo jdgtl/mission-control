@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
   Zap, Mail, Calendar, DollarSign, Newspaper, Activity, BarChart3, 
   CheckCircle, Clock, ArrowRight, Sparkles

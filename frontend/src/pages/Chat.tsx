@@ -2,10 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MessageCircle, Send, Bot, User, Loader2, Trash2, Sparkles,
-  ArrowLeft, Hash, MessageSquare, Zap, Clock, Search
+  ArrowLeft, Zap, Clock, Search
 } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
-import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
 import { useApi, timeAgo } from '../lib/hooks'
 import { useIsMobile } from '../lib/useIsMobile'

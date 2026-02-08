@@ -15,8 +15,8 @@ import {
   Cloud,
   Command,
   Zap,
-  FileText,
-  GitBranch
+  GitBranch,
+  FileText
 } from 'lucide-react'
 
 interface McConfig {

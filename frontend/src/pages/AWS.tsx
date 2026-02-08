@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Cloud, Play, CheckCircle, AlertCircle, ChevronDown, ChevronUp, X, MessageSquare, Image, Music, Video, Box, Brain, Mic, Languages, Search } from 'lucide-react'
+import { Cloud, Play, CheckCircle, AlertCircle, X, MessageSquare, Image, Music, Video, Box, Brain, Search } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
@@ -33,7 +33,7 @@ type ModelCategory = 'all' | 'text' | 'image-gen' | 'vision' | 'video' | 'embedd
 const CATEGORY_FILTERS: { id: ModelCategory; label: string; icon: any; match: (m: BedrockModel) => boolean }[] = [
   { id: 'all', label: 'All', icon: Box, match: () => true },
   { id: 'text', label: 'Text / Chat', icon: MessageSquare, match: (m) => {
-    const inp = m.inputModalities || []; const out = m.outputModalities || []
+    const out = m.outputModalities || []
     return out.includes('TEXT') && !out.includes('IMAGE') && !out.includes('VIDEO') && !out.includes('EMBEDDING')
   }},
   { id: 'vision', label: 'Vision', icon: Brain, match: (m) => {
