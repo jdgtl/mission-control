@@ -433,6 +433,18 @@ app.get('/api/status', async (req, res) => {
         channels
       },
       heartbeat: hb,
+      modelRouting: (() => {
+        try {
+          const cfgPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+          const defaults = cfg.agents?.defaults || {};
+          return {
+            main: defaults.model?.primary || '',
+            subagent: defaults.subagents?.model || '',
+            heartbeat: defaults.heartbeat?.model || '',
+          };
+        } catch { return { main: '', subagent: '', heartbeat: '' }; }
+      })(),
       recentActivity: recentActivity || [],
       tokenUsage: tokenUsage || { used: 0, limit: 1000000, percentage: 0 },
       system: (() => {

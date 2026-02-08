@@ -277,23 +277,13 @@ function ModelRoutingCard({ isMobile }: { isMobile: boolean }) {
   const { data: modelsData } = useApi<any[]>('/api/models')
 
   useEffect(() => {
-    if (statusData?.agent?.model) {
-      // Extract the full model ID from the current agent model
-      const currentModel = statusData.agent.model
-      // Map display names back to full model IDs (best effort)
-      const modelMapping: Record<string, string> = {
-        'Claude Opus 4': 'us.anthropic.claude-opus-4-6-v1',
-        'Claude Sonnet 4': 'us.anthropic.claude-sonnet-4-20250514-v1:0',
-        'Claude Haiku 4.5': 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
-      }
-      
-      const fullModelId = modelMapping[currentModel] || currentModel
-      setRouting(prev => ({
-        ...prev,
-        main: fullModelId,
-        subagent: prev.subagent || 'us.anthropic.claude-sonnet-4-20250514-v1:0',
-        heartbeat: prev.heartbeat || 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
-      }))
+    if (statusData?.modelRouting) {
+      const r = statusData.modelRouting
+      setRouting({
+        main: r.main || '',
+        subagent: r.subagent || '',
+        heartbeat: r.heartbeat || '',
+      })
     }
   }, [statusData])
 
