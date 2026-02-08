@@ -3013,44 +3013,30 @@ app.post('/api/quick/schedule', async (req, res) => {
 app.post('/api/settings/model-routing', async (req, res) => {
   const { main, subagent, heartbeat } = req.body;
   try {
-    // Build the config patch
-    const patch = {
-      agents: {
-        defaults: {
-          model: { primary: main },
-          subagents: { model: subagent },
-          heartbeat: { model: heartbeat }
-        }
-      }
-    };
+    const { execSync } = require('child_process');
+    const results = [];
 
-    // Apply via gateway config.patch API
-    const patchRes = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/config/patch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
-      body: JSON.stringify({ raw: JSON.stringify(patch) }),
-      signal: AbortSignal.timeout(10000)
-    });
-
-    if (patchRes.ok) {
-      // Also save to mc-config for display
-      mcConfig.modelRouting = { main, subagent, heartbeat };
-      fs.writeFileSync(MC_CONFIG_PATH, JSON.stringify(mcConfig, null, 2));
-      res.json({ status: 'saved', applied: true, message: 'Model routing updated and gateway restarting' });
-    } else {
-      const err = await patchRes.text();
-      console.log('[Model routing] Gateway patch failed:', err);
-      // Fallback: save to mc-config only
-      mcConfig.modelRouting = { main, subagent, heartbeat };
-      fs.writeFileSync(MC_CONFIG_PATH, JSON.stringify(mcConfig, null, 2));
-      res.json({ status: 'saved', applied: false, message: 'Saved locally but gateway patch failed' });
+    // Apply each model via openclaw config set + gateway restart
+    if (main) {
+      try { execSync(`openclaw config set agents.defaults.model.primary "${main}"`, { timeout: 5000 }); results.push('main'); } catch(e) { console.log('[Model routing] main failed:', e.message); }
     }
-  } catch(e) {
-    console.log('[Model routing] Error:', e.message);
-    // Fallback: save locally
+    if (subagent) {
+      try { execSync(`openclaw config set agents.defaults.subagents.model "${subagent}"`, { timeout: 5000 }); results.push('subagent'); } catch(e) { console.log('[Model routing] subagent failed:', e.message); }
+    }
+    if (heartbeat) {
+      try { execSync(`openclaw config set agents.defaults.heartbeat.model "${heartbeat}"`, { timeout: 5000 }); results.push('heartbeat'); } catch(e) { console.log('[Model routing] heartbeat failed:', e.message); }
+    }
+
+    // Restart gateway to apply
+    try { execSync('openclaw gateway restart', { timeout: 10000 }); } catch(e) { console.log('[Model routing] restart failed:', e.message); }
+
+    // Also save to mc-config for display
     mcConfig.modelRouting = { main, subagent, heartbeat };
     fs.writeFileSync(MC_CONFIG_PATH, JSON.stringify(mcConfig, null, 2));
-    res.json({ status: 'saved', applied: false, error: e.message });
+    res.json({ status: 'saved', applied: results, message: `Model routing updated: ${results.join(', ')}` });
+  } catch(e) {
+    console.log('[Model routing] Error:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -3059,16 +3045,12 @@ app.post('/api/settings/heartbeat', async (req, res) => {
   try {
     const { interval, model } = req.body;
     
-    // If model provided, patch gateway config
     if (model) {
       try {
-        await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/config/patch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
-          body: JSON.stringify({ raw: JSON.stringify({ agents: { defaults: { heartbeat: { model } } } }) }),
-          signal: AbortSignal.timeout(10000)
-        });
-      } catch (e) { console.log('[Heartbeat] Gateway patch failed:', e.message); }
+        const { execSync } = require('child_process');
+        execSync(`openclaw config set agents.defaults.heartbeat.model "${model}"`, { timeout: 5000 });
+        execSync('openclaw gateway restart', { timeout: 10000 });
+      } catch (e) { console.log('[Heartbeat] config set failed:', e.message); }
     }
 
     mcConfig.heartbeat = { interval, model };
