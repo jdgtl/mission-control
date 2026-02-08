@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Puzzle, Download, Trash2, ToggleLeft, ToggleRight, Package, FolderOpen, Code } from 'lucide-react'
+import { addNotification } from '../components/NotificationSystem'
 import PageTransition from '../components/PageTransition'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
@@ -47,9 +48,16 @@ export default function Skills() {
     setToggling(skillName)
     try {
       const response = await fetch(`/api/skills/${skillName}/install`, { method: 'POST' })
-      if (response.ok) refetch()
+      const data = await response.json()
+      if (response.ok) {
+        addNotification({ type: 'success', title: 'Skill Installed!', message: data.message || `${skillName} is now active` })
+        refetch()
+      } else {
+        addNotification({ type: 'error', title: 'Install Failed', message: data.error || 'Unknown error' })
+      }
     } catch (error) {
       console.error('Failed to install skill:', error)
+      addNotification({ type: 'error', title: 'Install Failed', message: 'Network error' })
     } finally {
       setToggling(null)
     }
