@@ -1019,7 +1019,9 @@ export default function Costs() {
                     </div>
                   </div>
                 )}
-                <div style={{ 
+                <div 
+                  onClick={() => window.location.href = '/settings'}
+                  style={{ 
                   padding: m ? '10px 12px' : '12px 16px', 
                   background: 'rgba(255,255,255,0.05)', 
                   borderRadius: '8px',
