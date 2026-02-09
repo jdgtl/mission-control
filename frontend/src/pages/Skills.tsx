@@ -6,6 +6,7 @@ import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
 import { useApi } from '../lib/hooks'
+import { apiFetch } from '../lib/api'
 
 interface Skill {
   name: string
@@ -30,9 +31,8 @@ export default function Skills() {
       const skill = [...(skillsData?.installed || []), ...(skillsData?.available || [])].find(s => s.name === skillName)
       const newEnabled = skill?.status !== 'active'
       
-      const response = await fetch(`/api/skills/${skillName}/toggle`, { 
+      const response = await apiFetch(`/api/skills/${skillName}/toggle`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: newEnabled })
       })
       if (response.ok) refetch()
@@ -46,7 +46,7 @@ export default function Skills() {
   const handleInstallSkill = async (skillName: string) => {
     setToggling(skillName)
     try {
-      const response = await fetch(`/api/skills/${skillName}/install`, { method: 'POST' })
+      const response = await apiFetch(`/api/skills/${skillName}/install`, { method: 'POST' })
       if (response.ok) refetch()
     } catch (error) {
       console.error('Failed to install skill:', error)
@@ -59,7 +59,7 @@ export default function Skills() {
     if (!confirm(`Are you sure you want to uninstall ${skillName}?`)) return
     setToggling(skillName)
     try {
-      const response = await fetch(`/api/skills/${skillName}/uninstall`, { method: 'POST' })
+      const response = await apiFetch(`/api/skills/${skillName}/uninstall`, { method: 'POST' })
       if (response.ok) refetch()
     } catch (error) {
       console.error('Failed to uninstall skill:', error)

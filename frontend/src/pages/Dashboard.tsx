@@ -11,6 +11,7 @@ import AnimatedCounter from '../components/AnimatedCounter'
 import StatusBadge from '../components/StatusBadge'
 import { useApi, timeAgo } from '../lib/hooks'
 import { useIsMobile } from '../lib/useIsMobile'
+import { apiFetch } from '../lib/api'
 
 const feedIcons: Record<string, any> = {
   check: CheckCircle,
@@ -55,9 +56,8 @@ function QuickActionsBar() {
     setResult(null)
     
     try {
-      const res = await fetch(`/api${endpoint}`, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }
+      const res = await apiFetch(`/api${endpoint}`, {
+        method: 'POST'
       })
       const data = await res.json()
       
@@ -202,7 +202,7 @@ export default function Dashboard() {
     setUpdating(true)
     setUpdateResult(null)
     try {
-      const res = await fetch('/api/system/update', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      const res = await apiFetch('/api/system/update', { method: 'POST' })
       const result = await res.json()
       setUpdateResult(result.message || 'Update triggered')
       // MC will restart — poll until it comes back

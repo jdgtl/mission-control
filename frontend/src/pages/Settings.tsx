@@ -5,6 +5,7 @@ import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
 import { useApi, timeAgo } from '../lib/hooks'
+import { apiFetch } from '../lib/api'
 
 export default function Settings() {
   const isMobile = useIsMobile()
@@ -205,7 +206,7 @@ function SystemInfoCard({ isMobile }: { isMobile: boolean }) {
     setUpdating(true)
     setUpdateMsg(null)
     try {
-      const res = await fetch('/api/system/update', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      const res = await apiFetch('/api/system/update', { method: 'POST' })
       const result = await res.json()
       setUpdateMsg(result.message || 'Update triggered')
       if (result.status === 'updating') {
@@ -343,7 +344,7 @@ function ExportImportCard({ isMobile }: { isMobile: boolean }) {
       const formData = new FormData()
       formData.append('config', file)
 
-      const res = await fetch('/api/settings/import', {
+      const res = await apiFetch('/api/settings/import', {
         method: 'POST',
         body: formData
       })
@@ -457,9 +458,8 @@ function RoadmapCard({ isMobile }: { isMobile: boolean }) {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await fetch('/api/system/enhancements', {
+      await apiFetch('/api/system/enhancements', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: draft })
       })
       setEditing(false)

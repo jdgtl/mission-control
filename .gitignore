@@ -15,3 +15,5 @@ tasks.json
 agents-custom.json
 scout-results.json
 SPEC.md
+data/
+!data/.gitkeep

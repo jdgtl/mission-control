@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { apiFetch } from './api'
 
 export function useApi<T>(url: string, interval?: number) {
   const [data, setData] = useState<T | null>(null)
@@ -7,7 +8,7 @@ export function useApi<T>(url: string, interval?: number) {
 
   const fetchData = async () => {
     try {
-      const res = await fetch(url)
+      const res = await apiFetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
       setData(json)

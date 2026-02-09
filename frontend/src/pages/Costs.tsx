@@ -4,6 +4,7 @@ import PageTransition from '../components/PageTransition'
 import GlassCard from '../components/GlassCard'
 import AnimatedCounter from '../components/AnimatedCounter'
 import { useIsMobile } from '../lib/useIsMobile'
+import { apiFetch } from '../lib/api'
 
 interface AWSSCostData {
   period: { start: string; end: string }
@@ -87,10 +88,10 @@ export default function Costs() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/aws/costs').then(r => r.json()).catch(() => null),
-      fetch('/api/costs').then(r => r.json()).catch(() => null),
-      fetch('/api/config').then(r => r.json()).catch(() => ({ modules: {} })),
-      fetch('/api/sessions').then(r => r.json()).catch(() => ({ sessions: [] }))
+      apiFetch('/api/aws/costs').then(r => r.json()).catch(() => null),
+      apiFetch('/api/costs').then(r => r.json()).catch(() => null),
+      apiFetch('/api/config').then(r => r.json()).catch(() => ({ modules: {} })),
+      apiFetch('/api/sessions').then(r => r.json()).catch(() => ({ sessions: [] }))
     ])
     .then(([aws, tokens, configData, sessionsData]) => {
       setAwsCosts(aws)
@@ -111,9 +112,8 @@ export default function Costs() {
     if (!budgetInput.trim()) return
     setSavingBudget(true)
     try {
-      const response = await fetch('/api/settings/budget', {
+      const response = await apiFetch('/api/settings/budget', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ monthly: parseFloat(budgetInput) || 0 })
       })
       if (response.ok) {

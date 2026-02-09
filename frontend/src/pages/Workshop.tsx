@@ -5,6 +5,7 @@ import { Plus, Clock, Zap, CheckCircle, Play, X, AlertCircle, Loader2, ArrowLeft
 import PageTransition from '../components/PageTransition'
 import { useApi, timeAgo } from '../lib/hooks'
 import { useIsMobile } from '../lib/useIsMobile'
+import { apiFetch } from '../lib/api'
 
 const priorityConfig: Record<string, { color: string; label: string }> = {
   high: { color: '#FF453A', label: 'High' },
@@ -74,9 +75,8 @@ export default function Workshop() {
   const handleAddTask = async () => {
     if (!addForm.title.trim()) return
     try {
-      await fetch('/api/tasks/add', {
+      await apiFetch('/api/tasks/add', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: addForm.title.trim(),
           description: addForm.description.trim(),
@@ -93,7 +93,7 @@ export default function Workshop() {
   const handleExecute = async (taskId: string) => {
     setExecuting(prev => ({ ...prev, [taskId]: true }))
     try {
-      await fetch(`/api/tasks/${taskId}/execute`, { method: 'POST' })
+      await apiFetch(`/api/tasks/${taskId}/execute`, { method: 'POST' })
       refetch()
     } catch {}
   }
@@ -228,7 +228,7 @@ export default function Workshop() {
           <button
             onClick={async () => {
               if (!confirm(`Delete "${viewTask.title}"?`)) return
-              await fetch(`/api/tasks/${viewTask.id}`, { method: 'DELETE' })
+              await apiFetch(`/api/tasks/${viewTask.id}`, { method: 'DELETE' })
               setViewTask(null)
               refetch()
             }}

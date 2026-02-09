@@ -9,6 +9,7 @@ import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import AnimatedCounter from '../components/AnimatedCounter'
 import { useApi } from '../lib/hooks'
+import { apiFetch } from '../lib/api'
 
 const typeIcons: Record<string, any> = { md: FileText, csv: FileSpreadsheet, js: FileCode, json: FileCode, txt: FileText, pdf: File, default: File }
 const typeColors: Record<string, string> = { md: '#007AFF', csv: '#32D74B', js: '#FF9500', json: '#FF9500', txt: '#8E8E93', pdf: '#FF453A', default: '#8E8E93' }
@@ -40,7 +41,7 @@ export default function Docs() {
     }
 
     try {
-      const res = await fetch('/api/docs/upload', {
+      const res = await apiFetch('/api/docs/upload', {
         method: 'POST',
         body: formData,
       })

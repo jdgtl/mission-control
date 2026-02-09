@@ -6,6 +6,7 @@ import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
 import { useApi, timeAgo, formatDate } from '../lib/hooks'
+import { apiFetch } from '../lib/api'
 
 const statusIcons: Record<string, any> = {
   success: CheckCircle,
@@ -504,9 +505,8 @@ export default function Cron() {
   const handleToggle = async (jobId: string, enabled: boolean) => {
     setActionLoading(`toggle-${jobId}`)
     try {
-      const response = await fetch(`/api/cron/${jobId}/toggle`, {
+      const response = await apiFetch(`/api/cron/${jobId}/toggle`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !enabled })
       })
       if (response.ok) {
@@ -526,9 +526,8 @@ export default function Cron() {
   const handleRun = async (jobId: string) => {
     setActionLoading(`run-${jobId}`)
     try {
-      const response = await fetch(`/api/cron/${jobId}/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+      const response = await apiFetch(`/api/cron/${jobId}/run`, {
+        method: 'POST'
       })
       if (response.ok) {
         const jobName = data?.jobs?.find((j: any) => j.id === jobId)?.name || jobId
@@ -552,7 +551,7 @@ export default function Cron() {
     
     setActionLoading(`delete-${jobId}`)
     try {
-      const response = await fetch(`/api/cron/${jobId}`, {
+      const response = await apiFetch(`/api/cron/${jobId}`, {
         method: 'DELETE'
       })
       if (response.ok) {
@@ -569,9 +568,8 @@ export default function Cron() {
 
   const handleCreateJob = async (job: any) => {
     try {
-      const response = await fetch('/api/cron/create', {
+      const response = await apiFetch('/api/cron/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ job })
       })
       if (response.ok) {

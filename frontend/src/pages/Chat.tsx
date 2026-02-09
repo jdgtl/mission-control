@@ -9,6 +9,7 @@ import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
 import { useApi, timeAgo } from '../lib/hooks'
 import { useIsMobile } from '../lib/useIsMobile'
+import { apiFetch } from '../lib/api'
 
 interface Message {
   id: string
@@ -135,9 +136,8 @@ export default function Chat() {
 
     try {
       abortRef.current = new AbortController()
-      const res = await fetch('/api/chat', {
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: history, stream: true }),
         signal: abortRef.current.signal
       })
@@ -193,7 +193,7 @@ export default function Chat() {
     if (!confirm('Close this session?')) return
     setClosingSession(sessionKey)
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(sessionKey)}/close`, {
+      await apiFetch(`/api/sessions/${encodeURIComponent(sessionKey)}/close`, {
         method: 'DELETE'
       })
       // Refresh sessions data and clear selection
@@ -216,9 +216,8 @@ export default function Chat() {
     setSessionInput('')
     
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(activeSession)}/send`, {
+      const res = await apiFetch(`/api/sessions/${encodeURIComponent(activeSession)}/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text })
       })
       const data = await res.json()
@@ -247,7 +246,7 @@ export default function Chat() {
     setHistoryMessages([])
     setMessages([])
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(s.key)}/history`)
+      const res = await apiFetch(`/api/sessions/${encodeURIComponent(s.key)}/history`)
       const data = await res.json()
       setHistoryMessages(data.messages || [])
     } catch {

@@ -12,8 +12,12 @@ import {
   MessageCircle,
   Settings,
   Puzzle,
-  Cloud
+  Cloud,
+  Shield,
+  LogOut
 } from 'lucide-react'
+import { apiFetch } from '../lib/api'
+import { useAuth } from '../lib/auth'
 
 interface McConfig {
   name?: string
@@ -42,18 +46,24 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [config, setConfig] = useState<McConfig | null>(null)
+  const { user, logout } = useAuth()
 
   useEffect(() => {
-    fetch('/api/config')
+    apiFetch('/api/config')
       .then(r => r.json())
       .then(setConfig)
       .catch(() => setConfig({ name: 'Mission Control', subtitle: 'Mission Control', modules: {} }))
   }, [])
 
   // Filter nav items based on enabled modules
-  const navItems = config?.modules
+  const baseNavItems = config?.modules
     ? allNavItems.filter(item => config.modules![item.module] !== false)
     : allNavItems
+
+  // Add Admin nav item for admin users
+  const navItems = user?.role === 'admin'
+    ? [...baseNavItems, { to: '/admin', icon: Shield, label: 'Admin', module: 'admin' }]
+    : baseNavItems
 
   const displayName = config?.name || 'Mission Control'
   const subtitle = config?.subtitle || 'Mission Control'
@@ -103,7 +113,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       {/* Divider */}
       <div className="divider-h" style={{ margin: '0 16px', position: 'relative', zIndex: 2 }} />
 
-      {/* Footer */}
+      {/* Footer — User info + Logout */}
       <div style={{ padding: 16, position: 'relative', zIndex: 2 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ position: 'relative' }}>
@@ -113,9 +123,34 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             <span className="status-dot status-dot-green" style={{ position: 'absolute', top: -4, right: -4 }} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>{displayName}</p>
-            <p style={{ fontSize: 10, color: '#32D74B', fontWeight: 500 }}>Active</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>
+              {user?.displayName || user?.username || displayName}
+            </p>
+            <p style={{ fontSize: 10, color: '#32D74B', fontWeight: 500 }}>
+              {user?.role === 'admin' ? 'Admin' : 'Active'}
+            </p>
           </div>
+          {user && (
+            <button
+              onClick={logout}
+              title="Sign out"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 8,
+                width: 32,
+                height: 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: 'rgba(255,255,255,0.5)',
+                flexShrink: 0,
+              }}
+            >
+              <LogOut size={14} />
+            </button>
+          )}
         </div>
       </div>
     </aside>

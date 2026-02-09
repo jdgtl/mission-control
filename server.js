@@ -4,6 +4,10 @@ const path = require('path');
 const http = require('http');
 const { execSync, exec } = require('child_process');
 const multer = require('multer');
+const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
+const { verifyToken, authenticateUser, createInviteCode, redeemInviteCode, createUser, loadUsers, saveUsers, getUserById, generateAccessToken } = require('./lib/auth');
+const { UserContext } = require('./lib/user-context');
 
 // ========== CONFIG: Load mc-config.json (or create from defaults) ==========
 const MC_CONFIG_PATH = path.join(__dirname, 'mc-config.json');
@@ -55,6 +59,162 @@ const app = express();
 const PORT = 3333;
 
 app.use(express.json());
+app.use(cookieParser());
+
+// ========== AUTH: Rate limiter on auth endpoints ==========
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  message: { error: 'Too many auth attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// ========== AUTH: Middleware ==========
+function requireAuth(req, res, next) {
+  // Extract token from Authorization header or cookie
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : req.cookies?.mc_token;
+
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const decoded = verifyToken(token);
+    // Reject refresh tokens used as access tokens (H3 fix)
+    if (decoded.type === 'refresh') return res.status(401).json({ error: 'Invalid token type' });
+    const user = getUserById(decoded.userId);
+    if (!user) return res.status(401).json({ error: 'User not found' });
+    if (user.disabled) return res.status(403).json({ error: 'Account disabled' });
+
+    req.user = { id: user.id, username: user.username, displayName: user.displayName, role: user.role };
+    req.ctx = new UserContext(user);
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
+function requireAdmin(req, res, next) {
+  requireAuth(req, res, () => {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    next();
+  });
+}
+
+// ========== AUTH: API Endpoints ==========
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+
+    const result = await authenticateUser(username, password);
+    if (!result) return res.status(401).json({ error: 'Invalid credentials' });
+
+    // Set httpOnly cookie
+    res.cookie('mc_token', result.accessToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000, // 24h
+      path: '/',
+    });
+    res.cookie('mc_refresh', result.refreshToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30d
+      path: '/api/auth/refresh',
+    });
+
+    res.json({ ok: true, token: result.accessToken, user: result.user });
+  } catch (err) {
+    console.error('[Auth login]', err.message);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+app.post('/api/auth/register', authLimiter, async (req, res) => {
+  try {
+    const { inviteCode, username, password, displayName } = req.body;
+    if (!inviteCode || !username || !password) {
+      return res.status(400).json({ error: 'Invite code, username, and password required' });
+    }
+    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) return res.status(400).json({ error: 'Username must be alphanumeric' });
+
+    // Validate invite code
+    const invite = redeemInviteCode(inviteCode);
+    if (!invite.valid) return res.status(400).json({ error: invite.error });
+
+    // Create user (no gateway yet — admin will provision)
+    const user = await createUser({
+      username,
+      password,
+      displayName: displayName || username,
+      role: 'user',
+      gateway: { profile: username, port: 0, token: '', configDir: '' },
+    });
+
+    const result = await authenticateUser(username, password);
+    res.cookie('mc_token', result.accessToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+
+    res.json({ ok: true, token: result.accessToken, user: result.user, needsProvisioning: true });
+  } catch (err) {
+    console.error('[Auth register]', err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/refresh', async (req, res) => {
+  try {
+    const refreshToken = req.cookies?.mc_refresh;
+    if (!refreshToken) return res.status(401).json({ error: 'No refresh token' });
+
+    const decoded = verifyToken(refreshToken);
+    if (decoded.type !== 'refresh') return res.status(401).json({ error: 'Invalid token type' });
+
+    const user = getUserById(decoded.userId);
+    if (!user || user.disabled) return res.status(401).json({ error: 'User not found' });
+
+    const accessToken = generateAccessToken(user);
+    res.cookie('mc_token', accessToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+
+    res.json({ ok: true, token: accessToken });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid refresh token' });
+  }
+});
+
+app.get('/api/auth/check', requireAuth, (req, res) => {
+  res.json({ ok: true, user: req.user });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('mc_token', { path: '/' });
+  res.clearCookie('mc_refresh', { path: '/api/auth/refresh' });
+  res.json({ ok: true });
+});
+
+// ========== AUTH: Apply to all /api/* routes except auth ==========
+app.use('/api', (req, res, next) => {
+  // Skip auth for auth endpoints and static files
+  if (req.path.startsWith('/auth/')) return next();
+  requireAuth(req, res, next);
+});
 
 // Serve React frontend (static assets)
 app.use(express.static(path.join(__dirname, 'frontend/dist')));
@@ -63,13 +223,16 @@ app.use(express.static(path.join(__dirname, 'frontend/dist')));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // ========== HELPER: Fetch sessions from gateway ==========
-async function fetchSessions(limit = 50) {
+// ctx-aware version: pass a UserContext, or falls back to global config for startup tasks
+async function fetchSessions(limit = 50, ctx = null) {
   try {
-    const gwRes = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/tools/invoke`, {
+    const port = ctx ? ctx.gatewayPort : GATEWAY_PORT;
+    const token = ctx ? ctx.gatewayToken : GATEWAY_TOKEN;
+    const gwRes = await fetch(`http://127.0.0.1:${port}/tools/invoke`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({
         tool: 'sessions_list',
@@ -194,15 +357,11 @@ app.post('/api/chat', async (req, res) => {
     user: 'mission-control',
   });
 
-  console.log('[Chat proxy] Sending to gateway, payload length:', Buffer.byteLength(payload));
+  console.log(`[Chat proxy] Sending to gateway (user: ${req.user.username}), payload length:`, Buffer.byteLength(payload));
 
   try {
-    const gwRes = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/chat/completions`, {
+    const gwRes = await req.ctx.gatewayFetch('/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
-      },
       body: payload,
       signal: AbortSignal.timeout(120000),
     });
@@ -245,28 +404,54 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // ========== API: Agent status + heartbeat ==========
-// ========== STATUS CACHE (avoids 5s+ load times) ==========
-let statusCache = null;
-let statusCacheTime = 0;
+// ========== STATUS CACHE (per-user, via userCaches Map) ==========
 const STATUS_CACHE_TTL = 60000; // 60 seconds
 
+// ========== PER-USER CACHES ==========
+// Map<userId, { status, statusTime, sessions, sessionsTime, activity, activityTime, costs, costsTime, cron, cronTime, hiddenSessions }>
+const userCaches = new Map();
+function getUserCache(userId) {
+  if (!userCaches.has(userId)) {
+    userCaches.set(userId, {
+      status: null, statusTime: 0,
+      sessions: null, sessionsTime: 0,
+      activity: null, activityTime: 0,
+      costs: null, costsTime: 0,
+      cron: null, cronTime: 0,
+    });
+  }
+  return userCaches.get(userId);
+}
+
 // Background status updater — refreshes cache without blocking requests
-async function refreshStatusCache() {
+// ctx parameter: UserContext (for per-user operation) or null (for admin/startup)
+async function refreshStatusCache(ctx = null) {
+  const userId = ctx ? ctx.userId : '_admin';
+  const cache = getUserCache(userId);
   try {
+    const memoryPath = ctx ? ctx.memoryPath : MEMORY_PATH;
     // Run all slow operations in parallel
     const [openclawStatus, notionActivity, sessionData, heartbeatLast] = await Promise.allSettled([
       new Promise((resolve) => {
         try {
-          resolve(execSync('openclaw status 2>&1', { timeout: 8000, encoding: 'utf8' }));
+          if (ctx) {
+            resolve(ctx.execCli('status 2>&1', { timeout: 8000 }));
+          } else {
+            resolve(execSync('openclaw status 2>&1', { timeout: 8000, encoding: 'utf8' }));
+          }
         } catch (e) {
           resolve(e.stdout || '');
         }
       }),
       fetchNotionActivity(8).catch(() => null),
-      fetchSessions(50).catch(() => ({ count: 0, sessions: [] })),
+      fetchSessions(50, ctx).catch(() => ({ count: 0, sessions: [] })),
       new Promise((resolve) => {
         try {
-          resolve(JSON.parse(execSync('openclaw system heartbeat last 2>/dev/null', { timeout: 15000, encoding: 'utf8' })));
+          if (ctx) {
+            resolve(JSON.parse(ctx.execCli('system heartbeat last 2>/dev/null', { timeout: 15000 })));
+          } else {
+            resolve(JSON.parse(execSync('openclaw system heartbeat last 2>/dev/null', { timeout: 15000, encoding: 'utf8' })));
+          }
         } catch (e) {
           resolve(null);
         }
@@ -294,7 +479,8 @@ async function refreshStatusCache() {
     // Fallback: check openclaw.json for enabled channels if regex found nothing
     if (channels.length === 0) {
       try {
-        const ocConfig = JSON.parse(fs.readFileSync(path.join(process.env.HOME, '.openclaw', 'openclaw.json'), 'utf8'));
+        const configDir = ctx ? ctx.configDir : path.join(process.env.HOME, '.openclaw');
+        const ocConfig = JSON.parse(fs.readFileSync(path.join(configDir, 'openclaw.json'), 'utf8'));
         if (ocConfig.channels) {
           for (const [name, cfg] of Object.entries(ocConfig.channels)) {
             if (cfg.enabled) {
@@ -317,13 +503,13 @@ async function refreshStatusCache() {
     // Activity fallback
     let recentActivity = activity;
     if (!recentActivity || !recentActivity.length) {
-      recentActivity = buildActivityFromMemory();
+      recentActivity = buildActivityFromMemory(memoryPath);
     }
 
     // Heartbeat state (filesystem + native openclaw data)
     let heartbeat = {};
     try {
-      heartbeat = JSON.parse(fs.readFileSync(path.join(MEMORY_PATH, 'heartbeat-state.json'), 'utf8'));
+      heartbeat = JSON.parse(fs.readFileSync(path.join(memoryPath, 'heartbeat-state.json'), 'utf8'));
     } catch { heartbeat = { lastHeartbeat: null, lastChecks: {} }; }
     // Merge native heartbeat data from openclaw CLI
     if (hbLast && hbLast.ts) {
@@ -335,23 +521,24 @@ async function refreshStatusCache() {
       heartbeat.lastChecks.system = { time: hbTime, status: hbLast.status || 'ok', reason: hbLast.reason, channel: hbLast.channel };
     }
 
-    statusCache = { sessionsMatch, modelMatch, memoryMatch, heartbeatInterval, agentsMatch, channels, tokenUsage, recentActivity, heartbeat };
-    statusCacheTime = Date.now();
+    cache.status = { sessionsMatch, modelMatch, memoryMatch, heartbeatInterval, agentsMatch, channels, tokenUsage, recentActivity, heartbeat };
+    cache.statusTime = Date.now();
   } catch (e) {
     console.error('[StatusCache] refresh failed:', e.message);
   }
 }
 
-function buildActivityFromMemory() {
+function buildActivityFromMemory(memoryPath) {
+  const mp = memoryPath || MEMORY_PATH;
   const recentActivity = [];
   for (const dayOffset of [0, 1]) {
     const d = new Date();
     d.setDate(d.getDate() - dayOffset);
     const dateStr = d.toISOString().split('T')[0];
     try {
-      const memPath = path.join(MEMORY_PATH, `${dateStr}.md`);
-      if (fs.existsSync(memPath)) {
-        const memContent = fs.readFileSync(memPath, 'utf8');
+      const memFile = path.join(mp, `${dateStr}.md`);
+      if (fs.existsSync(memFile)) {
+        const memContent = fs.readFileSync(memFile, 'utf8');
         const sections = memContent.split(/\n## /).slice(1);
         sections.slice(0, 6).forEach(section => {
           const firstLine = section.split('\n')[0].trim();
@@ -376,59 +563,30 @@ function buildActivityFromMemory() {
   return recentActivity.length ? recentActivity : [{ time: new Date().toISOString(), action: 'System running', detail: 'Dashboard active', type: 'general' }];
 }
 
-// Kick off initial cache build on startup (don't block server start)
-setTimeout(() => refreshStatusCache(), 50);
-// Pre-warm cron cache on startup (async to not block listen)
-setTimeout(() => {
-  try {
-    const _cronRaw = execSync('openclaw cron list --json 2>&1', { timeout: 10000, encoding: 'utf8' });
-    const _parsed = JSON.parse(_cronRaw);
-    cronCache = { jobs: (_parsed.jobs || []).map(j => ({
-      id: j.id, name: j.name || j.id.substring(0, 8),
-      schedule: j.schedule?.expr || j.schedule?.kind || '?',
-      status: !j.enabled ? 'disabled' : (j.state?.lastStatus === 'ok' ? 'active' : j.state?.lastStatus || 'idle'),
-      lastRun: j.state?.lastRunAtMs ? new Date(j.state.lastRunAtMs).toISOString() : null,
-      nextRun: j.state?.nextRunAtMs ? new Date(j.state.nextRunAtMs).toISOString() : null,
-      duration: j.state?.lastDurationMs ? `${j.state.lastDurationMs}ms` : null,
-      target: j.sessionTarget || 'main', payload: j.payload?.kind || '?',
-      description: j.payload?.text?.substring(0, 120) || '', history: [],
-      enabled: j.enabled !== false,
-    })) };
-    cronCacheTime = Date.now();
-    console.log(`[Startup] Pre-warmed ${cronCache.jobs.length} cron jobs`);
-  } catch (e) { console.warn('[Startup] Cron pre-warm failed'); }
-}, 100);
-
-// Pre-warm activity + costs caches on startup
-setTimeout(async () => {
-  try {
-    const r = await fetch(`http://127.0.0.1:3333/api/activity`);
-    if (r.ok) console.log('[Startup] Pre-warmed activity cache');
-  } catch {}
-  try {
-    const r = await fetch(`http://127.0.0.1:3333/api/costs`);
-    if (r.ok) console.log('[Startup] Pre-warmed costs cache');
-  } catch {}
-}, 3000);
+// Note: Startup pre-warm removed — caches are now per-user and populated lazily
+// on first request via getUserCache(). The old approach wrote to global caches
+// (statusCache, cronCache) that no request handler reads, and self-fetches to
+// /api/activity and /api/costs would fail with 401 due to auth middleware.
 
 app.get('/api/status', async (req, res) => {
   try {
+    const cache = getUserCache(req.ctx.userId);
     // If cache is stale, refresh in background but serve cached data immediately
-    if (Date.now() - statusCacheTime > STATUS_CACHE_TTL) {
-      refreshStatusCache(); // don't await — fire and forget
+    if (Date.now() - cache.statusTime > STATUS_CACHE_TTL) {
+      refreshStatusCache(req.ctx); // don't await — fire and forget
     }
 
     // If no cache yet (first request), kick off refresh but don't block
-    if (!statusCache) {
-      refreshStatusCache(); // will populate on next request
+    if (!cache.status) {
+      refreshStatusCache(req.ctx); // will populate on next request
     }
 
-    const { sessionsMatch, modelMatch, memoryMatch, heartbeatInterval, agentsMatch, channels, tokenUsage, recentActivity, heartbeat } = statusCache || {};
+    const { sessionsMatch, modelMatch, memoryMatch, heartbeatInterval, agentsMatch, channels, tokenUsage, recentActivity, heartbeat } = cache.status || {};
 
     // Read heartbeat state
     let hb = heartbeat || {};
     try {
-      hb = JSON.parse(fs.readFileSync(path.join(MEMORY_PATH, 'heartbeat-state.json'), 'utf8'));
+      hb = JSON.parse(fs.readFileSync(path.join(req.ctx.memoryPath, 'heartbeat-state.json'), 'utf8'));
     } catch { /* use cached */ }
 
     res.json({
@@ -453,40 +611,32 @@ app.get('/api/status', async (req, res) => {
 });
 
 // ========== API: Live sessions (from OpenClaw gateway) ==========
-let sessionsCache = null;
-let sessionsCacheTime = 0;
 const SESSIONS_CACHE_TTL = 60000;
-
-// Activity cache
-let activityCache = null;
-let activityCacheTime = 0;
 const ACTIVITY_CACHE_TTL = 30000;
-
-// Costs cache
-let costsCache = null;
-let costsCacheTime = 0;
 const COSTS_CACHE_TTL = 60000;
 
 app.get('/api/sessions', async (req, res) => {
   try {
+    const cache = getUserCache(req.ctx.userId);
     // Return cache if fresh
-    if (sessionsCache && Date.now() - sessionsCacheTime < SESSIONS_CACHE_TTL) {
-      return res.json(sessionsCache);
+    if (cache.sessions && Date.now() - cache.sessionsTime < SESSIONS_CACHE_TTL) {
+      return res.json(cache.sessions);
     }
 
-    const sessionData = await fetchSessions(25);
+    const sessionData = await fetchSessions(25, req.ctx);
     const sessions = sessionData.sessions || [];
+    const hiddenSessions = req.ctx.loadHiddenSessions();
 
     const result = {
       count: sessionData.count || sessions.length,
       sessions: sessions.map(s => {
         const key = s.key || '';
-        const type = key.includes(':subagent:') ? 'sub-agent' 
+        const type = key.includes(':subagent:') ? 'sub-agent'
           : key.includes(':discord:') ? 'discord'
           : key.includes(':openai') ? 'web'
           : key.includes(':main:main') ? 'main'
           : 'other';
-        
+
         return {
           key: s.key,
           kind: s.kind,
@@ -505,8 +655,8 @@ app.get('/api/sessions', async (req, res) => {
     // Filter out hidden/closed sessions
     result.sessions = result.sessions.filter(s => !hiddenSessions.includes(s.key));
     result.count = result.sessions.length;
-    sessionsCache = result;
-    sessionsCacheTime = Date.now();
+    cache.sessions = result;
+    cache.sessionsTime = Date.now();
     res.json(result);
   } catch (e) {
     console.error('[Sessions API]', e.message);
@@ -514,19 +664,18 @@ app.get('/api/sessions', async (req, res) => {
   }
 });
 
-// ========== API: Cron jobs (LIVE from OpenClaw, cached) ==========
-let cronCache = null;
-let cronCacheTime = 0;
+// ========== API: Cron jobs (LIVE from OpenClaw, cached per-user) ==========
 const CRON_CACHE_TTL = 30000;
 
 app.get('/api/cron', (req, res) => {
   try {
+    const cache = getUserCache(req.ctx.userId);
     // Return cache if fresh
-    if (cronCache && Date.now() - cronCacheTime < CRON_CACHE_TTL) {
-      return res.json(cronCache);
+    if (cache.cron && Date.now() - cache.cronTime < CRON_CACHE_TTL) {
+      return res.json(cache.cron);
     }
 
-    const cronRaw = execSync('openclaw cron list --json 2>&1', { timeout: 10000, encoding: 'utf8' });
+    const cronRaw = req.ctx.execCli('cron list --json 2>&1', { timeout: 10000 });
     const parsed = JSON.parse(cronRaw);
 
     const jobs = (parsed.jobs || []).map(j => ({
@@ -545,8 +694,8 @@ app.get('/api/cron', (req, res) => {
     }));
 
     const result = { jobs };
-    cronCache = result;
-    cronCacheTime = Date.now();
+    cache.cron = result;
+    cache.cronTime = Date.now();
     res.json(result);
   } catch (e) {
     console.error('[Cron API]', e.message);
@@ -559,20 +708,12 @@ app.post('/api/cron/:id/toggle', async (req, res) => {
   try {
     const { id } = req.params;
     const { enabled } = req.body;
-    
-    const response = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/tools/invoke`, {
+
+    const response = await req.ctx.gatewayFetch('/tools/invoke', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json', 
-        'Authorization': `Bearer ${GATEWAY_TOKEN}` 
-      },
-      body: JSON.stringify({ 
-        tool: 'cron', 
-        args: { 
-          action: 'update', 
-          jobId: id, 
-          patch: { enabled: enabled } 
-        } 
+      body: JSON.stringify({
+        tool: 'cron',
+        args: { action: 'update', jobId: id, patch: { enabled: enabled } }
       })
     });
 
@@ -582,9 +723,9 @@ app.post('/api/cron/:id/toggle', async (req, res) => {
     }
 
     // Clear cache so next GET refreshes
-    cronCache = null;
-    cronCacheTime = 0;
-    
+    const cache = getUserCache(req.ctx.userId);
+    cache.cron = null; cache.cronTime = 0;
+
     res.json({ ok: true, message: `Job ${enabled ? 'enabled' : 'disabled'}` });
   } catch (error) {
     console.error('[Cron toggle]', error.message);
@@ -596,20 +737,10 @@ app.post('/api/cron/:id/toggle', async (req, res) => {
 app.post('/api/cron/:id/run', async (req, res) => {
   try {
     const { id } = req.params;
-    
-    const response = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/tools/invoke`, {
+
+    const response = await req.ctx.gatewayFetch('/tools/invoke', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json', 
-        'Authorization': `Bearer ${GATEWAY_TOKEN}` 
-      },
-      body: JSON.stringify({ 
-        tool: 'cron', 
-        args: { 
-          action: 'run', 
-          jobId: id 
-        } 
-      })
+      body: JSON.stringify({ tool: 'cron', args: { action: 'run', jobId: id } })
     });
 
     if (!response.ok) {
@@ -617,10 +748,9 @@ app.post('/api/cron/:id/run', async (req, res) => {
       throw new Error(`Gateway error: ${response.status} ${errorText}`);
     }
 
-    // Clear cache so next GET refreshes
-    cronCache = null;
-    cronCacheTime = 0;
-    
+    const cache = getUserCache(req.ctx.userId);
+    cache.cron = null; cache.cronTime = 0;
+
     res.json({ ok: true, message: 'Job triggered successfully' });
   } catch (error) {
     console.error('[Cron run]', error.message);
@@ -632,24 +762,14 @@ app.post('/api/cron/:id/run', async (req, res) => {
 app.post('/api/cron/create', async (req, res) => {
   try {
     const { job } = req.body;
-    
+
     if (!job || !job.name || !job.schedule) {
       return res.status(400).json({ error: 'Invalid job format - name and schedule required' });
     }
-    
-    const response = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/tools/invoke`, {
+
+    const response = await req.ctx.gatewayFetch('/tools/invoke', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json', 
-        'Authorization': `Bearer ${GATEWAY_TOKEN}` 
-      },
-      body: JSON.stringify({ 
-        tool: 'cron', 
-        args: { 
-          action: 'add', 
-          job: job 
-        } 
-      })
+      body: JSON.stringify({ tool: 'cron', args: { action: 'add', job: job } })
     });
 
     if (!response.ok) {
@@ -657,10 +777,9 @@ app.post('/api/cron/create', async (req, res) => {
       throw new Error(`Gateway error: ${response.status} ${errorText}`);
     }
 
-    // Clear cache so next GET refreshes
-    cronCache = null;
-    cronCacheTime = 0;
-    
+    const cache = getUserCache(req.ctx.userId);
+    cache.cron = null; cache.cronTime = 0;
+
     res.json({ ok: true, message: 'Job created successfully' });
   } catch (error) {
     console.error('[Cron create]', error.message);
@@ -672,20 +791,10 @@ app.post('/api/cron/create', async (req, res) => {
 app.delete('/api/cron/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
-    const response = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/tools/invoke`, {
+
+    const response = await req.ctx.gatewayFetch('/tools/invoke', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json', 
-        'Authorization': `Bearer ${GATEWAY_TOKEN}` 
-      },
-      body: JSON.stringify({ 
-        tool: 'cron', 
-        args: { 
-          action: 'remove', 
-          jobId: id 
-        } 
-      })
+      body: JSON.stringify({ tool: 'cron', args: { action: 'remove', jobId: id } })
     });
 
     if (!response.ok) {
@@ -693,10 +802,9 @@ app.delete('/api/cron/:id', async (req, res) => {
       throw new Error(`Gateway error: ${response.status} ${errorText}`);
     }
 
-    // Clear cache so next GET refreshes
-    cronCache = null;
-    cronCacheTime = 0;
-    
+    const cache = getUserCache(req.ctx.userId);
+    cache.cron = null; cache.cronTime = 0;
+
     res.json({ ok: true, message: 'Job deleted successfully' });
   } catch (error) {
     console.error('[Cron delete]', error.message);
@@ -707,15 +815,16 @@ app.delete('/api/cron/:id', async (req, res) => {
 // ========== API: Activity Feed — aggregated activity from all sources ==========
 app.get('/api/activity', async (req, res) => {
   try {
+    const cache = getUserCache(req.ctx.userId);
     // Serve from cache if fresh
-    if (activityCache && Date.now() - activityCacheTime < ACTIVITY_CACHE_TTL) {
-      return res.json(activityCache);
+    if (cache.activity && Date.now() - cache.activityTime < ACTIVITY_CACHE_TTL) {
+      return res.json(cache.activity);
     }
     const feed = [];
-    
+
     // 1. Completed tasks (with results)
     try {
-      const tasks = JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8'));
+      const tasks = req.ctx.loadTasks();
       for (const task of (tasks.columns.done || []).slice(0, 15)) {
         feed.push({
           id: `task-${task.id}`,
@@ -753,9 +862,8 @@ app.get('/api/activity', async (req, res) => {
     
     // 2. Scout opportunities (recent, undeployed)
     try {
-      const scoutFile = path.join(__dirname, 'scout-results.json');
-      if (fs.existsSync(scoutFile)) {
-        const scout = JSON.parse(fs.readFileSync(scoutFile, 'utf8'));
+      const scout = req.ctx.loadScoutResults();
+      if (scout.opportunities) {
         for (const opp of (scout.opportunities || []).filter(o => o.status !== 'dismissed').slice(0, 10)) {
           feed.push({
             id: `scout-${opp.id}`,
@@ -777,8 +885,7 @@ app.get('/api/activity', async (req, res) => {
     
     // 3. Cron job last runs
     try {
-      const { execSync } = require('child_process');
-      const cronOutput = execSync('openclaw cron list --json 2>/dev/null || echo "[]"', { timeout: 5000 }).toString();
+      const cronOutput = req.ctx.execCli('cron list --json 2>/dev/null', { timeout: 5000 }).toString();
       const crons = JSON.parse(cronOutput);
       for (const job of (Array.isArray(crons) ? crons : crons.jobs || [])) {
         if (job.lastRun || job.lastRunAt) {
@@ -797,7 +904,7 @@ app.get('/api/activity', async (req, res) => {
     
     // 4. Gateway session activity (only sessions with real message content)
     try {
-      const sessions = await fetchSessions(20);
+      const sessions = await fetchSessions(20, req.ctx);
       const sessionList = sessions.sessions || [];
       for (const s of sessionList.slice(0, 15)) {
         const lastMsg = s.lastMessage || s.preview || '';
@@ -832,7 +939,7 @@ app.get('/api/activity', async (req, res) => {
         const d = new Date();
         d.setDate(d.getDate() - dayOffset);
         const dateStr = d.toISOString().split('T')[0];
-        const memPath = path.join(MEMORY_PATH, `${dateStr}.md`);
+        const memPath = path.join(req.ctx.memoryPath, `${dateStr}.md`);
         if (fs.existsSync(memPath)) {
           const memContent = fs.readFileSync(memPath, 'utf8');
           const memMtime = fs.statSync(memPath).mtime.toISOString();
@@ -882,28 +989,25 @@ app.get('/api/activity', async (req, res) => {
     });
 
     const result = { feed: feed.slice(0, 30), generated: new Date().toISOString() };
-    activityCache = result;
-    activityCacheTime = Date.now();
+    const actCache = getUserCache(req.ctx.userId);
+    actCache.activity = result;
+    actCache.activityTime = Date.now();
     res.json(result);
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// ========== API: Tasks (Kanban) — reads from tasks.json ==========
+// ========== API: Tasks (Kanban) — per-user tasks ==========
+// Legacy global TASKS_FILE kept for startup recovery only
 const TASKS_FILE = path.join(__dirname, 'tasks.json');
 
 app.get('/api/tasks', (req, res) => {
   try {
-    const raw = fs.readFileSync(TASKS_FILE, 'utf8');
-    const data = JSON.parse(raw);
-    res.json(data);
+    res.json(req.ctx.loadTasks());
   } catch (e) {
-    console.error('[Tasks API] Failed to read tasks.json:', e.message);
-    // Fallback: empty board
-    res.json({
-      columns: { queue: [], inProgress: [], blocked: [], done: [] }
-    });
+    console.error('[Tasks API] Failed to read tasks:', e.message);
+    res.json({ columns: { queue: [], inProgress: [], blocked: [], done: [] } });
   }
 });
 
@@ -914,7 +1018,7 @@ app.post('/api/tasks', (req, res) => {
     if (!data || !data.columns) {
       return res.status(400).json({ error: 'Invalid format. Expected { columns: { queue, inProgress, done, ... } }' });
     }
-    fs.writeFileSync(TASKS_FILE, JSON.stringify(data, null, 2), 'utf8');
+    req.ctx.saveTasks(data);
     res.json({ ok: true, message: 'Tasks updated' });
   } catch (e) {
     console.error('[Tasks POST]', e.message);
@@ -927,8 +1031,8 @@ app.post('/api/tasks/add', (req, res) => {
   try {
     const { title, description, priority, tags } = req.body;
     if (!title) return res.status(400).json({ error: 'title required' });
-    
-    const tasks = JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8'));
+
+    const tasks = req.ctx.loadTasks();
     const task = {
       id: `task-${Date.now()}`,
       title,
@@ -939,7 +1043,7 @@ app.post('/api/tasks/add', (req, res) => {
       source: 'manual',
     };
     tasks.columns.queue.unshift(task);
-    fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2));
+    req.ctx.saveTasks(tasks);
     res.json({ ok: true, task });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -949,7 +1053,7 @@ app.post('/api/tasks/add', (req, res) => {
 // DELETE: Remove a task from any column
 app.delete('/api/tasks/:taskId', (req, res) => {
   try {
-    const tasks = JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8'));
+    const tasks = req.ctx.loadTasks();
     const { taskId } = req.params;
     let found = false;
     for (const col of Object.keys(tasks.columns)) {
@@ -961,9 +1065,10 @@ app.delete('/api/tasks/:taskId', (req, res) => {
       }
     }
     if (!found) return res.status(404).json({ error: 'Task not found' });
-    fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2));
+    req.ctx.saveTasks(tasks);
     // Clear activity cache
-    activityCache = null; activityCacheTime = 0;
+    const cache = getUserCache(req.ctx.userId);
+    cache.activity = null; cache.activityTime = 0;
     res.json({ ok: true, deleted: taskId });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -974,8 +1079,8 @@ app.delete('/api/tasks/:taskId', (req, res) => {
 app.post('/api/tasks/:taskId/execute', async (req, res) => {
   try {
     const { taskId } = req.params;
-    const tasks = JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8'));
-    
+    const tasks = req.ctx.loadTasks();
+
     // Find task in any column
     let task = null;
     let fromCol = null;
@@ -988,20 +1093,18 @@ app.post('/api/tasks/:taskId/execute', async (req, res) => {
         break;
       }
     }
-    
+
     if (!task) return res.status(404).json({ error: 'Task not found' });
-    
+
     // Move to inProgress
     task.startedAt = new Date().toISOString();
     task.status = 'executing';
     tasks.columns.inProgress.unshift(task);
-    fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2));
-    
-    // Spawn sub-agent via gateway
-    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
-    const cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
-    const gwToken = cfg.gateway?.auth?.token || process.env.MC_GATEWAY_TOKEN || '';
-    const gwPort = cfg.gateway?.port || 18789;
+    req.ctx.saveTasks(tasks);
+
+    // Use per-user gateway connection
+    const gwToken = req.ctx.gatewayToken;
+    const gwPort = req.ctx.gatewayPort;
     
     // Build smart prompt based on task source/content
     const title = task.title || '';
@@ -1108,15 +1211,15 @@ Be thorough. Your output will be shown directly to the user as the task result.`
     
     // Save child session key for polling
     task.childSessionKey = childKey;
-    fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2));
+    req.ctx.saveTasks(tasks);
     
-    // Poll for completion in background
+    // Poll for completion in background (capture ctx for closure)
+    const ctx = req.ctx;
     if (childKey) {
       const pollInterval = setInterval(async () => {
         try {
-          const listRes = await fetch(`http://127.0.0.1:${gwPort}/tools/invoke`, {
+          const listRes = await ctx.gatewayFetch('/tools/invoke', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${gwToken}` },
             body: JSON.stringify({ tool: 'sessions_list', args: { limit: 100, messageLimit: 1 } })
           });
           const listData = await listRes.json();
@@ -1133,9 +1236,8 @@ Be thorough. Your output will be shown directly to the user as the task result.`
           // Get last message from the child session
           let resultText = '';
           try {
-            const histRes = await fetch(`http://127.0.0.1:${gwPort}/tools/invoke`, {
+            const histRes = await ctx.gatewayFetch('/tools/invoke', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${gwToken}` },
               body: JSON.stringify({ tool: 'sessions_history', args: { sessionKey: childKey, limit: 5 } })
             });
             const histData = await histRes.json();
@@ -1160,10 +1262,10 @@ Be thorough. Your output will be shown directly to the user as the task result.`
           if (!resultText) {
             try {
               const uuid = childKey.split(':').pop();
-              const sessionsJson = JSON.parse(fs.readFileSync(path.join(require('os').homedir(), '.openclaw/agents/main/sessions/sessions.json'), 'utf8'));
+              const sessionsJson = JSON.parse(fs.readFileSync(ctx.sessionsFile, 'utf8'));
               const sessionInfo = sessionsJson[childKey];
               const sessionId = sessionInfo?.sessionId || uuid;
-              const transcriptPath = path.join(require('os').homedir(), '.openclaw/agents/main/sessions', `${sessionId}.jsonl`);
+              const transcriptPath = path.join(ctx.sessionsDir, `${sessionId}.jsonl`);
               if (fs.existsSync(transcriptPath)) {
                 const lines = fs.readFileSync(transcriptPath, 'utf8').trim().split('\n');
                 // Find last assistant message
@@ -1186,7 +1288,7 @@ Be thorough. Your output will be shown directly to the user as the task result.`
           }
           
           // Move task to done
-          const tasksNow = JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8'));
+          const tasksNow = ctx.loadTasks();
           const idx = tasksNow.columns.inProgress.findIndex(t => t.id === taskId);
           if (idx >= 0) {
             const doneTask = tasksNow.columns.inProgress.splice(idx, 1)[0];
@@ -1195,7 +1297,7 @@ Be thorough. Your output will be shown directly to the user as the task result.`
             doneTask.result = resultText.substring(0, 3000) || 'Task completed (no output captured)';
             // Keep childSessionKey for continued chat
             tasksNow.columns.done.unshift(doneTask);
-            fs.writeFileSync(TASKS_FILE, JSON.stringify(tasksNow, null, 2));
+            ctx.saveTasks(tasksNow);
             console.log(`[Task Execute] ✅ ${taskId} done, result: ${resultText.substring(0, 80)}...`);
           }
         } catch(e) {
@@ -1208,7 +1310,7 @@ Be thorough. Your output will be shown directly to the user as the task result.`
         clearInterval(pollInterval);
         // Check if task is still in progress
         try {
-          const tasksNow = JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8'));
+          const tasksNow = ctx.loadTasks();
           const idx = tasksNow.columns.inProgress.findIndex(t => t.id === taskId);
           if (idx >= 0) {
             const timedOut = tasksNow.columns.inProgress.splice(idx, 1)[0];
@@ -1217,7 +1319,7 @@ Be thorough. Your output will be shown directly to the user as the task result.`
             timedOut.result = 'Task timed out after 6 minutes. Check sub-agent session for results.';
             // Keep childSessionKey for continued chat
             tasksNow.columns.done.unshift(timedOut);
-            fs.writeFileSync(TASKS_FILE, JSON.stringify(tasksNow, null, 2));
+            ctx.saveTasks(tasksNow);
           }
         } catch(e) {}
       }, 360000);
@@ -1232,10 +1334,11 @@ Be thorough. Your output will be shown directly to the user as the task result.`
 // ========== API: Costs — Real token usage from sessions ==========
 app.get('/api/costs', async (req, res) => {
   try {
-    if (costsCache && Date.now() - costsCacheTime < COSTS_CACHE_TTL) {
-      return res.json(costsCache);
+    const cache = getUserCache(req.ctx.userId);
+    if (cache.costs && Date.now() - cache.costsTime < COSTS_CACHE_TTL) {
+      return res.json(cache.costs);
     }
-    const sessionData = await fetchSessions(50);
+    const sessionData = await fetchSessions(50, req.ctx);
     const sessions = sessionData.sessions || [];
 
     // Compute totals
@@ -1318,8 +1421,8 @@ app.get('/api/costs', async (req, res) => {
       byChannel,
       budget: mcConfig.budget || { monthly: 0 }
     };
-    costsCache = costsResult;
-    costsCacheTime = Date.now();
+    cache.costs = costsResult;
+    cache.costsTime = Date.now();
     res.json(costsResult);
   } catch (e) {
     console.error('[Costs API]', e.message);
@@ -1335,8 +1438,8 @@ app.get('/api/costs', async (req, res) => {
   }
 });
 
-// ========== API: Budget Setting ==========
-app.post('/api/settings/budget', (req, res) => {
+// ========== API: Budget Setting (admin only — modifies server-wide config) ==========
+app.post('/api/settings/budget', requireAdmin, (req, res) => {
   try {
     mcConfig.budget = { monthly: req.body.monthly || 0 };
     fs.writeFileSync(MC_CONFIG_PATH, JSON.stringify(mcConfig, null, 2));
@@ -1350,13 +1453,7 @@ app.post('/api/settings/budget', (req, res) => {
 // ========== API: Scout — Real SmålandWebb lead data ==========
 app.get('/api/scout', (req, res) => {
   try {
-    // Read scout results from scout-engine.js output
-    let scoutData = { opportunities: [], lastScan: null };
-    try {
-      scoutData = JSON.parse(fs.readFileSync(path.join(__dirname, 'scout-results.json'), 'utf8'));
-    } catch (e) {
-      console.log('[Scout] No scout-results.json yet — run: node scout-engine.js');
-    }
+    const scoutData = req.ctx.loadScoutResults();
 
     // Filter out junk (score < 15)
     const opportunities = (scoutData.opportunities || []).filter(o => o.score >= 15);
@@ -1385,18 +1482,15 @@ app.post('/api/scout/deploy', (req, res) => {
     const { opportunityId } = req.body;
     if (!opportunityId) return res.status(400).json({ error: 'Missing opportunityId' });
 
-    // Update scout results status
-    const scoutFile = path.join(__dirname, 'scout-results.json');
-    const scoutData = JSON.parse(fs.readFileSync(scoutFile, 'utf8'));
+    const scoutData = req.ctx.loadScoutResults();
     const opp = scoutData.opportunities.find(o => o.id === opportunityId);
     if (!opp) return res.status(404).json({ error: 'Opportunity not found' });
-    
-    opp.status = 'deployed';
-    fs.writeFileSync(scoutFile, JSON.stringify(scoutData, null, 2));
 
-    // Add to tasks.json queue
-    const tasksFile = path.join(__dirname, 'tasks.json');
-    const tasks = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
+    opp.status = 'deployed';
+    req.ctx.saveScoutResults(scoutData);
+
+    // Add to user's tasks queue
+    const tasks = req.ctx.loadTasks();
     tasks.columns.queue.unshift({
       id: `scout-${Date.now()}`,
       title: opp.title.substring(0, 80),
@@ -1406,7 +1500,7 @@ app.post('/api/scout/deploy', (req, res) => {
       tags: opp.tags || [opp.category],
       source: 'scout',
     });
-    fs.writeFileSync(tasksFile, JSON.stringify(tasks, null, 2));
+    req.ctx.saveTasks(tasks);
 
     res.json({ ok: true, task: tasks.columns.queue[0] });
   } catch (e) {
@@ -1419,12 +1513,11 @@ app.post('/api/scout/deploy', (req, res) => {
 app.post('/api/scout/dismiss', (req, res) => {
   try {
     const { opportunityId } = req.body;
-    const scoutFile = path.join(__dirname, 'scout-results.json');
-    const scoutData = JSON.parse(fs.readFileSync(scoutFile, 'utf8'));
+    const scoutData = req.ctx.loadScoutResults();
     const opp = scoutData.opportunities.find(o => o.id === opportunityId);
     if (opp) {
       opp.status = 'dismissed';
-      fs.writeFileSync(scoutFile, JSON.stringify(scoutData, null, 2));
+      req.ctx.saveScoutResults(scoutData);
     }
     res.json({ ok: true });
   } catch (e) {
@@ -1470,15 +1563,11 @@ app.get('/api/scout/status', (req, res) => {
 // ========== API: Agents — Real from gateway sessions + custom agents ==========
 app.get('/api/agents', async (req, res) => {
   try {
-    const sessionData = await fetchSessions(50);
+    const sessionData = await fetchSessions(50, req.ctx);
     const sessions = sessionData.sessions || [];
 
-    // Load custom agents from agents-custom.json
-    const customAgentsFile = path.join(__dirname, 'agents-custom.json');
-    let customAgents = [];
-    try {
-      customAgents = JSON.parse(fs.readFileSync(customAgentsFile, 'utf8'));
-    } catch {}
+    // Load custom agents from per-user agents-custom.json
+    const customAgents = req.ctx.loadCustomAgents();
 
     // Primary agent) = main session
     const mainSession = sessions.find(s => s.key === 'agent:main:main');
@@ -1603,13 +1692,7 @@ app.post('/api/agents/create', (req, res) => {
       return res.status(400).json({ error: 'name and model are required' });
     }
 
-    // Save to agents-custom.json file
-    const agentsFile = path.join(__dirname, 'agents-custom.json');
-    let agents = [];
-    try {
-      agents = JSON.parse(fs.readFileSync(agentsFile, 'utf8'));
-    } catch {}
-
+    const agents = req.ctx.loadCustomAgents();
     const agent = {
       id: `custom-${Date.now()}`,
       name,
@@ -1622,7 +1705,7 @@ app.post('/api/agents/create', (req, res) => {
     };
 
     agents.push(agent);
-    fs.writeFileSync(agentsFile, JSON.stringify(agents, null, 2));
+    req.ctx.saveCustomAgents(agents);
 
     res.json({ ok: true, agent });
   } catch (error) {
@@ -1634,19 +1717,14 @@ app.post('/api/agents/create', (req, res) => {
 // Settings API endpoints
 app.get('/api/settings', async (req, res) => {
   try {
-    // Read OpenClaw config
-    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
-    const configData = fs.existsSync(configPath)
-      ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
-      : {};
+    const configData = req.ctx.readOpenclawConfig();
 
-    // Sanitize config (remove sensitive data)
     const modelConfig = configData.agents?.defaults?.model || {};
     const sanitized = {
       model: modelConfig.primary || configData.model || 'unknown',
       modelFallbacks: modelConfig.fallbacks || [],
-      gateway_port: GATEWAY_PORT,
-      memory_path: MEMORY_PATH,
+      gateway_port: req.ctx.gatewayPort,
+      memory_path: req.ctx.memoryPath,
       skills_path: SKILLS_PATH,
       bedrock_region: S3_REGION
     };
@@ -1665,11 +1743,7 @@ app.get('/api/skills', async (req, res) => {
     const available = [];
 
     // Read OpenClaw config for installed skills
-    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
-    let config = {};
-    if (fs.existsSync(configPath)) {
-      config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    }
+    const config = req.ctx.readOpenclawConfig();
 
     // Get installed skills from config
     if (config.skills && config.skills.entries) {
@@ -1759,23 +1833,15 @@ app.post('/api/skills/:name/toggle', async (req, res) => {
   try {
     const { name } = req.params;
 
-    // Update OpenClaw config
-    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
-    const config = fs.existsSync(configPath)
-      ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
-      : { skills: { entries: {} } };
+    const config = req.ctx.readOpenclawConfig();
+    if (!config.skills) config.skills = { entries: {} };
 
     if (config.skills?.entries?.[name]) {
       config.skills.entries[name].enabled = !config.skills.entries[name].enabled;
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      req.ctx.writeOpenclawConfig(config);
 
       // Notify gateway about config change
-      await fetch(`http://127.0.0.1:${GATEWAY_PORT}/config/reload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${GATEWAY_TOKEN}`
-        }
-      });
+      await req.ctx.gatewayFetch('/config/reload', { method: 'POST' });
 
       res.json({ success: true });
     } else {
@@ -1875,8 +1941,7 @@ app.get('/api/aws/bedrock-models', async (req, res) => {
 app.get('/api/models', async (req, res) => {
   // List available models from OpenClaw config
   try {
-    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
-    const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
+    const config = req.ctx.readOpenclawConfig();
     const modelConfig = config.agents?.defaults?.model || {};
     const modelDefs = config.agents?.defaults?.models || {};
 
@@ -1905,9 +1970,7 @@ app.post('/api/model', async (req, res) => {
     const { model } = req.body;
     if (!model) return res.status(400).json({ error: 'model required' });
 
-    // Read current config, update model, write back
-    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const config = req.ctx.readOpenclawConfig();
 
     // Set the default model
     if (!config.agents) config.agents = {};
@@ -1915,7 +1978,7 @@ app.post('/api/model', async (req, res) => {
     if (!config.agents.defaults.model) config.agents.defaults.model = {};
     config.agents.defaults.model.default = model;
 
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    req.ctx.writeOpenclawConfig(config);
 
     // Signal gateway to reload config (safe: no shell interpolation)
     try {
@@ -2078,9 +2141,16 @@ app.get('/api/aws/s3-image/:key(*)', async (req, res) => {
 app.get('/api/config', (req, res) => {
   // Deep clone to avoid mutating mcConfig
   const safe = JSON.parse(JSON.stringify(mcConfig));
-  if (safe.gateway) safe.gateway = { port: safe.gateway.port };
+  if (safe.gateway) safe.gateway = { port: req.ctx ? req.ctx.gatewayPort : safe.gateway.port };
   if (safe.notion) delete safe.notion.token;
   if (safe.scout) delete safe.scout.braveApiKey;
+  // Include per-user paths
+  if (req.ctx) {
+    safe.workspace = req.ctx.workspacePath;
+    safe.memoryPath = req.ctx.memoryPath;
+  }
+  // Include user info for the frontend
+  safe.user = req.user;
   res.json(safe);
 });
 
@@ -2092,10 +2162,7 @@ app.get('/api/setup', async (req, res) => {
     let gatewayRunning = false;
     let gatewayVersion = '';
     try {
-      const response = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/status`, { 
-        method: 'GET',
-        timeout: 3000 
-      });
+      const response = await req.ctx.gatewayFetch('/status', { method: 'GET' });
       if (response.ok) {
         gatewayRunning = true;
         const status = await response.json();
@@ -2122,7 +2189,7 @@ app.get('/api/setup', async (req, res) => {
     };
 
     try {
-      const openclawConfigPath = path.join(process.env.HOME || '/home/ubuntu', '.openclaw/openclaw.json');
+      const openclawConfigPath = req.ctx.openclawConfigPath;
       if (fs.existsSync(openclawConfigPath)) {
         const openclawConfig = JSON.parse(fs.readFileSync(openclawConfigPath, 'utf8'));
         detectedConfig.model = openclawConfig.agents?.defaults?.model?.primary || '';
@@ -2139,7 +2206,7 @@ app.get('/api/setup', async (req, res) => {
         }
         
         // Try to detect agent name from IDENTITY.md or SOUL.md
-        const ws = detectedConfig.workspacePath || process.env.HOME;
+        const ws = detectedConfig.workspacePath || req.ctx.workspacePath;
         try {
           const identity = fs.readFileSync(path.join(ws, 'IDENTITY.md'), 'utf8');
           const nameMatch = identity.match(/\*\*Name:\*\*\s*(.+)/);
@@ -2156,7 +2223,7 @@ app.get('/api/setup', async (req, res) => {
     res.json({
       needsSetup,
       gatewayRunning,
-      gatewayPort: GATEWAY_PORT,
+      gatewayPort: req.ctx.gatewayPort,
       gatewayVersion,
       detectedConfig
     });
@@ -2165,8 +2232,8 @@ app.get('/api/setup', async (req, res) => {
   }
 });
 
-// POST: Update setup configuration
-app.post('/api/setup', (req, res) => {
+// POST: Update setup configuration (admin only — modifies server-wide mc-config.json)
+app.post('/api/setup', requireAdmin, (req, res) => {
   try {
     const { dashboardName, gateway, modules, scout } = req.body;
     
@@ -2288,15 +2355,10 @@ app.get('/api/aws/costs', async (req, res) => {
 app.get('/api/sessions/:sessionKey/history', async (req, res) => {
   try {
     const sessionKey = decodeURIComponent(req.params.sessionKey);
-    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
-    const cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
-    const gwToken = cfg.gateway?.auth?.token || process.env.MC_GATEWAY_TOKEN || '';
-    const gwPort = cfg.gateway?.port || 18789;
-    
+
     // First get session info to find transcriptPath
-    const listRes = await fetch(`http://127.0.0.1:${gwPort}/tools/invoke`, {
+    const listRes = await req.ctx.gatewayFetch('/tools/invoke', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${gwToken}` },
       body: JSON.stringify({ tool: 'sessions_list', input: { limit: 100, messageLimit: 0 } })
     });
     
@@ -2310,7 +2372,7 @@ app.get('/api/sessions/:sessionKey/history', async (req, res) => {
     if (!session?.transcriptPath) return res.json({ messages: [], info: 'No transcript found' });
     
     // Read JSONL transcript (validate path stays within sessions dir)
-    const transcriptDir = path.join(require('os').homedir(), '.openclaw/agents/main/sessions');
+    const transcriptDir = req.ctx.sessionsDir;
     const transcriptFile = path.resolve(transcriptDir, session.transcriptPath);
     if (!transcriptFile.startsWith(transcriptDir + path.sep)) {
       return res.status(400).json({ messages: [], error: 'Invalid transcript path' });
@@ -2359,20 +2421,14 @@ app.post('/api/sessions/:sessionKey/send', async (req, res) => {
     const sessionKey = decodeURIComponent(req.params.sessionKey);
     const { message } = req.body;
     if (!message) return res.status(400).json({ error: 'message required' });
-    
-    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
-    const cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
-    const gwToken = cfg.gateway?.auth?.token || process.env.MC_GATEWAY_TOKEN || '';
-    const gwPort = cfg.gateway?.port || 18789;
-    
+
     // Use AbortController for timeout
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 90000); // 90s max
-    
+
     try {
-      const response = await fetch(`http://127.0.0.1:${gwPort}/tools/invoke`, {
+      const response = await req.ctx.gatewayFetch('/tools/invoke', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${gwToken}` },
         signal: controller.signal,
         body: JSON.stringify({
           tool: 'sessions_send',
@@ -2399,12 +2455,11 @@ app.post('/api/sessions/:sessionKey/send', async (req, res) => {
       // If timed out, try reading last message from transcript
       let resultText = '';
       try {
-        const sessionsFile = path.join(require('os').homedir(), '.openclaw/agents/main/sessions/sessions.json');
-        const sessions = JSON.parse(fs.readFileSync(sessionsFile, 'utf8'));
+        const sessions = fs.existsSync(req.ctx.sessionsFile) ? JSON.parse(fs.readFileSync(req.ctx.sessionsFile, 'utf8')) : {};
         const sessionInfo = sessions[sessionKey] || {};
         const sessionId = sessionInfo.sessionId || '';
         if (sessionId) {
-          const transcriptPath = path.join(require('os').homedir(), '.openclaw/agents/main/sessions', `${sessionId}.jsonl`);
+          const transcriptPath = path.join(req.ctx.sessionsDir, `${sessionId}.jsonl`);
           if (fs.existsSync(transcriptPath)) {
             const lines = fs.readFileSync(transcriptPath, 'utf8').trim().split('\n');
             for (let i = lines.length - 1; i >= 0; i--) {
@@ -2434,35 +2489,33 @@ app.post('/api/sessions/:sessionKey/send', async (req, res) => {
   }
 });
 
-// Close session endpoint (placeholder)
-// Track hidden/closed sessions
-const HIDDEN_SESSIONS_PATH = path.join(__dirname, 'hidden-sessions.json');
-let hiddenSessions = [];
-try { hiddenSessions = JSON.parse(fs.readFileSync(HIDDEN_SESSIONS_PATH, 'utf8')); } catch {}
-
+// Close session endpoint — per-user hidden sessions
 app.delete('/api/sessions/:key/close', async (req, res) => {
   const key = decodeURIComponent(req.params.key);
+  const hiddenSessions = req.ctx.loadHiddenSessions();
   if (!hiddenSessions.includes(key)) {
     hiddenSessions.push(key);
-    fs.writeFileSync(HIDDEN_SESSIONS_PATH, JSON.stringify(hiddenSessions, null, 2));
+    req.ctx.saveHiddenSessions(hiddenSessions);
   }
   // Clear sessions cache so next fetch excludes this session
-  sessionsCache = null;
-  sessionsCacheTime = 0;
+  const cache = getUserCache(req.ctx.userId);
+  cache.sessions = null; cache.sessionsTime = 0;
   res.json({ status: 'hidden', message: `Session "${key}" hidden from view` });
 });
 
 // === Document Management ===
+// Global docsDir + upload kept for compatibility; routes use per-user dirs
 const docsDir = path.join(__dirname, 'documents');
 if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
 
-const upload = multer({ dest: path.join(docsDir, '.tmp'), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ dest: path.join(__dirname, 'data', '.tmp'), limits: { fileSize: 10 * 1024 * 1024 } });
 
 app.get('/api/docs', (req, res) => {
   try {
-    const files = fs.readdirSync(docsDir).filter(f => !f.startsWith('.'));
+    const userDocsDir = req.ctx.documentsDir;
+    const files = fs.readdirSync(userDocsDir).filter(f => !f.startsWith('.'));
     const documents = files.map(f => {
-      const stat = fs.statSync(path.join(docsDir, f));
+      const stat = fs.statSync(path.join(userDocsDir, f));
       const ext = path.extname(f).replace('.', '');
       const sizeBytes = stat.size;
       const size = sizeBytes > 1024 * 1024 ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB` 
@@ -2480,9 +2533,10 @@ app.get('/api/docs', (req, res) => {
 
 app.post('/api/docs/upload', upload.array('files', 20), (req, res) => {
   try {
+    const userDocsDir = req.ctx.documentsDir;
     const uploaded = [];
     for (const file of (req.files || [])) {
-      const dest = path.join(docsDir, file.originalname);
+      const dest = path.join(userDocsDir, file.originalname);
       fs.renameSync(file.path, dest);
       uploaded.push(file.originalname);
     }
@@ -2497,15 +2551,14 @@ app.post('/api/docs/upload', upload.array('files', 20), (req, res) => {
 // POST /api/heartbeat/run — trigger heartbeat via cron tool
 app.post('/api/heartbeat/run', async (req, res) => {
   try {
-    const r = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/tools/invoke`, {
+    const r = await req.ctx.gatewayFetch('/tools/invoke', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
       body: JSON.stringify({ tool: 'cron', args: { action: 'wake', text: 'Manual heartbeat check from Mission Control', mode: 'now' } })
     });
     const data = await r.json();
     // Persist heartbeat state so dashboard shows last run
     try {
-      const statePath = path.join(MEMORY_PATH, 'heartbeat-state.json');
+      const statePath = path.join(req.ctx.memoryPath, 'heartbeat-state.json');
       let state = {};
       try { state = JSON.parse(fs.readFileSync(statePath, 'utf8')); } catch {}
       state.lastHeartbeat = new Date().toISOString();
@@ -2513,8 +2566,8 @@ app.post('/api/heartbeat/run', async (req, res) => {
       state.lastChecks.manual = { time: new Date().toISOString(), status: data?.result ? 'ok' : 'error' };
       fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
       // Bust the status cache so dashboard picks it up immediately
-      statusCache = null;
-      statusCacheTime = 0;
+      const cache = getUserCache(req.ctx.userId);
+      cache.status = null; cache.statusTime = 0;
     } catch (e) { console.error('[Heartbeat] State write error:', e.message); }
     res.json({ status: 'triggered', result: data });
   } catch(e) {
@@ -2553,8 +2606,8 @@ app.post('/api/settings/model-routing', async (req, res) => {
   }
 });
 
-// POST /api/settings/heartbeat
-app.post('/api/settings/heartbeat', async (req, res) => {
+// POST /api/settings/heartbeat (admin only — modifies server-wide config)
+app.post('/api/settings/heartbeat', requireAdmin, async (req, res) => {
   try {
     const { interval } = req.body;
     mcConfig.heartbeat = { interval };
@@ -2565,15 +2618,15 @@ app.post('/api/settings/heartbeat', async (req, res) => {
   }
 });
 
-// GET /api/settings/export
-app.get('/api/settings/export', (req, res) => {
+// GET /api/settings/export (admin only — contains secrets)
+app.get('/api/settings/export', requireAdmin, (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename=mc-config.json');
   res.setHeader('Content-Type', 'application/json');
   res.sendFile(MC_CONFIG_PATH);
 });
 
-// POST /api/settings/import
-app.post('/api/settings/import', upload.single('config'), (req, res) => {
+// POST /api/settings/import (admin only — replaces server-wide config)
+app.post('/api/settings/import', requireAdmin, upload.single('config'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No config file uploaded' });
@@ -2603,7 +2656,7 @@ app.get('/api/system/info', (req, res) => {
   let openclawVersion = updateCache.currentVersion || 'unknown';
   if (!openclawVersion || openclawVersion === 'unknown') {
     try {
-      openclawVersion = execSync('openclaw --version 2>/dev/null', { timeout: 5000, encoding: 'utf8' }).trim();
+      openclawVersion = req.ctx.execCli('--version 2>/dev/null', { timeout: 5000 }).trim();
     } catch { openclawVersion = 'unknown'; }
   }
 
@@ -2621,8 +2674,7 @@ app.get('/api/system/info', (req, res) => {
 // ========== SYSTEM: Model Routing (read-only) ==========
 app.get('/api/system/models', (req, res) => {
   try {
-    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
-    const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
+    const config = req.ctx.readOpenclawConfig();
     const modelConfig = config.agents?.defaults?.model || {};
     const modelDefs = config.agents?.defaults?.models || {};
 
@@ -2650,19 +2702,19 @@ app.get('/api/system/heartbeat', (req, res) => {
   try {
     let lastEvent = null;
     try {
-      lastEvent = JSON.parse(execSync('openclaw system heartbeat last 2>/dev/null', { timeout: 10000, encoding: 'utf8' }));
+      lastEvent = JSON.parse(req.ctx.execCli('system heartbeat last 2>/dev/null', { timeout: 10000 }));
     } catch (e) { console.error('[Heartbeat] Last event read error:', e.message); }
 
     // Read heartbeat state file for extra info
     let stateFile = {};
     try {
-      stateFile = JSON.parse(fs.readFileSync(path.join(MEMORY_PATH, 'heartbeat-state.json'), 'utf8'));
+      stateFile = JSON.parse(fs.readFileSync(path.join(req.ctx.memoryPath, 'heartbeat-state.json'), 'utf8'));
     } catch {}
 
     // Get interval from openclaw status
     let interval = '1h';
     try {
-      const ocStatus = execSync('openclaw status 2>/dev/null', { timeout: 10000, encoding: 'utf8' });
+      const ocStatus = req.ctx.execCli('status 2>/dev/null', { timeout: 10000 });
       const match = ocStatus.match(/Heartbeat\s*│\s*(\w+)/);
       if (match) interval = match[1];
     } catch (e) { console.error('[Heartbeat] Interval read error:', e.message); }
@@ -2757,8 +2809,8 @@ async function checkForUpdates() {
   return updateCache;
 }
 
-// Check on startup + every 6 hours
-checkForUpdates();
+// Check on startup (delayed) + every 6 hours
+setTimeout(() => checkForUpdates(), 5000);
 setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
 
 // GET /api/system/version — return cached update info
@@ -2800,6 +2852,96 @@ app.post('/api/system/update', (req, res) => {
   res.json({ status: 'updating', message: `Updating OpenClaw ${updateCache.updateDetail || ''}... Mission Control will restart automatically.` });
 });
 
+// ========== ADMIN API ENDPOINTS ==========
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  try {
+    const store = loadUsers();
+    const users = Object.values(store.users).map(u => ({
+      id: u.id,
+      username: u.username,
+      displayName: u.displayName,
+      role: u.role,
+      gateway: { profile: u.gateway?.profile, port: u.gateway?.port },
+      createdAt: u.createdAt,
+      disabled: u.disabled,
+    }));
+    res.json({ users });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/invite', requireAdmin, (req, res) => {
+  try {
+    const code = createInviteCode(req.user.id);
+    res.json({ ok: true, code });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    if (id === req.user.id) return res.status(400).json({ error: 'Cannot disable your own account' });
+    const store = loadUsers();
+    if (!store.users[id]) return res.status(404).json({ error: 'User not found' });
+    store.users[id].disabled = true;
+    saveUsers(store);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: re-enable a disabled user
+app.patch('/api/admin/users/:id', requireAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const store = loadUsers();
+    if (!store.users[id]) return res.status(404).json({ error: 'User not found' });
+    store.users[id].disabled = false;
+    saveUsers(store);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/admin/health', requireAdmin, async (req, res) => {
+  try {
+    const store = loadUsers();
+    const results = [];
+    for (const user of Object.values(store.users)) {
+      if (user.disabled || !user.gateway?.port) continue;
+      let healthy = false;
+      try {
+        const r = await fetch(`http://127.0.0.1:${user.gateway.port}/status`, { signal: AbortSignal.timeout(3000) });
+        healthy = r.ok;
+      } catch {}
+      results.push({ userId: user.id, username: user.username, port: user.gateway.port, healthy });
+    }
+    res.json({ gateways: results });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: update user gateway config (for provisioning)
+app.post('/api/admin/users/:id/gateway', requireAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { profile, port, token, configDir } = req.body;
+    const store = loadUsers();
+    if (!store.users[id]) return res.status(404).json({ error: 'User not found' });
+    store.users[id].gateway = { profile, port, token, configDir };
+    saveUsers(store);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // SPA catch-all: serve index.html for all non-API routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
@@ -2808,52 +2950,61 @@ app.get('*', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Mission Control running at http://localhost:${PORT}`);
   
-  // Recover stuck inProgress tasks on startup
+  // Recover stuck inProgress tasks on startup — iterate all users
   try {
-    const tasks = JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8'));
-    const sessionsFile = path.join(require('os').homedir(), '.openclaw/agents/main/sessions/sessions.json');
-    const sessions = fs.existsSync(sessionsFile) ? JSON.parse(fs.readFileSync(sessionsFile, 'utf8')) : {};
-    
-    let recovered = 0;
-    for (const task of [...tasks.columns.inProgress]) {
-      const childKey = task.childSessionKey || '';
-      const sessionInfo = sessions[childKey] || {};
-      const sessionId = sessionInfo.sessionId || '';
-      
-      if (!sessionId) continue;
-      
-      const transcriptPath = path.join(require('os').homedir(), '.openclaw/agents/main/sessions', `${sessionId}.jsonl`);
-      if (!fs.existsSync(transcriptPath)) continue;
-      
-      const lines = fs.readFileSync(transcriptPath, 'utf8').trim().split('\n');
-      let resultText = '';
-      for (let i = lines.length - 1; i >= 0; i--) {
-        try {
-          const evt = JSON.parse(lines[i]);
-          if (evt.type === 'message' && evt.message?.role === 'assistant') {
-            const content = evt.message.content;
-            resultText = Array.isArray(content)
-              ? content.filter(c => c.type === 'text').map(c => c.text).join('\n')
-              : typeof content === 'string' ? content : '';
-            if (resultText) break;
+    const store = loadUsers();
+    for (const user of Object.values(store.users)) {
+      if (user.disabled || !user.gateway?.configDir) continue;
+      const ctx = new UserContext(user);
+      try {
+        const tasks = ctx.loadTasks();
+        if (!tasks.columns.inProgress || tasks.columns.inProgress.length === 0) continue;
+        const sessFile = ctx.sessionsFile;
+        const sessions = fs.existsSync(sessFile) ? JSON.parse(fs.readFileSync(sessFile, 'utf8')) : {};
+
+        let recovered = 0;
+        for (const task of [...tasks.columns.inProgress]) {
+          const childKey = task.childSessionKey || '';
+          const sessionInfo = sessions[childKey] || {};
+          const sessionId = sessionInfo.sessionId || '';
+          if (!sessionId) continue;
+
+          const transcriptPath = path.join(ctx.sessionsDir, `${sessionId}.jsonl`);
+          if (!fs.existsSync(transcriptPath)) continue;
+
+          const lines = fs.readFileSync(transcriptPath, 'utf8').trim().split('\n');
+          let resultText = '';
+          for (let i = lines.length - 1; i >= 0; i--) {
+            try {
+              const evt = JSON.parse(lines[i]);
+              if (evt.type === 'message' && evt.message?.role === 'assistant') {
+                const content = evt.message.content;
+                resultText = Array.isArray(content)
+                  ? content.filter(c => c.type === 'text').map(c => c.text).join('\n')
+                  : typeof content === 'string' ? content : '';
+                if (resultText) break;
+              }
+            } catch(e) {}
           }
-        } catch(e) {}
+
+          if (resultText) {
+            const idx = tasks.columns.inProgress.indexOf(task);
+            if (idx >= 0) tasks.columns.inProgress.splice(idx, 1);
+            task.status = 'done';
+            task.completed = new Date().toISOString();
+            task.result = resultText.substring(0, 3000);
+            tasks.columns.done.unshift(task);
+            recovered++;
+          }
+        }
+
+        if (recovered > 0) {
+          ctx.saveTasks(tasks);
+          console.log(`🔄 Recovered ${recovered} stuck tasks for user ${user.username}`);
+        }
+      } catch(e) {
+        console.error(`[Startup recovery] User ${user.username}:`, e.message);
       }
-      
-      if (resultText) {
-        const idx = tasks.columns.inProgress.indexOf(task);
-        if (idx >= 0) tasks.columns.inProgress.splice(idx, 1);
-        task.status = 'done';
-        task.completed = new Date().toISOString();
-        task.result = resultText.substring(0, 3000);
-        tasks.columns.done.unshift(task);
-        recovered++;
-      }
-    }
-    
-    if (recovered > 0) {
-      fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2));
-      console.log(`🔄 Recovered ${recovered} stuck inProgress tasks on startup`);
     }
   } catch(e) {
     console.error('[Startup recovery]', e.message);

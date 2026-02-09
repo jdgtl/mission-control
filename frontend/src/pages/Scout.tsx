@@ -5,6 +5,7 @@ import PageTransition from '../components/PageTransition'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import { useApi, timeAgo } from '../lib/hooks'
+import { apiFetch } from '../lib/api'
 
 const scoreColor = (score: number) => {
   if (score >= 85) return '#32D74B'
@@ -88,14 +89,14 @@ export default function Scout() {
 
   const handleDeploy = async (oppId: string) => {
     try {
-      await fetch('/api/scout/deploy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ opportunityId: oppId }) })
+      await apiFetch('/api/scout/deploy', { method: 'POST', body: JSON.stringify({ opportunityId: oppId }) })
       refetchScout()
     } catch {}
   }
 
   const handleDismiss = async (oppId: string) => {
     try {
-      await fetch('/api/scout/dismiss', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ opportunityId: oppId }) })
+      await apiFetch('/api/scout/dismiss', { method: 'POST', body: JSON.stringify({ opportunityId: oppId }) })
       refetchScout()
     } catch {}
   }
@@ -104,14 +105,14 @@ export default function Scout() {
     try {
       setScanning(true)
       setToast(null)
-      const response = await fetch('/api/scout/scan', { method: 'POST' })
+      const response = await apiFetch('/api/scout/scan', { method: 'POST' })
       const result = await response.json()
       
       if (result.status === 'scanning') {
         // Poll for completion
         const checkStatus = async () => {
           try {
-            const statusResponse = await fetch('/api/scout/status')
+            const statusResponse = await apiFetch('/api/scout/status')
             const status = await statusResponse.json()
             
             if (!status.scanning) {

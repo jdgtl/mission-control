@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MessageCircle, X, Send, Bot, User, Loader2, Minimize2 } from 'lucide-react'
 import { useIsMobile } from '../lib/useIsMobile'
+import { apiFetch } from '../lib/api'
 
 interface Message {
   id: string
@@ -74,9 +75,8 @@ export default function ChatWidget() {
 
     try {
       abortRef.current = new AbortController()
-      const res = await fetch('/api/chat', {
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: history, stream: true }),
         signal: abortRef.current.signal
       })

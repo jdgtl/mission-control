@@ -1,8 +1,10 @@
-import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
+import { Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { useState, useEffect } from 'react'
 import { Menu, X } from 'lucide-react'
 import { useIsMobile } from './lib/useIsMobile'
+import { AuthProvider, useAuth } from './lib/auth'
+import { apiFetch } from './lib/api'
 import Sidebar from './components/Sidebar'
 import ChatWidget from './components/ChatWidget'
 import Dashboard from './pages/Dashboard'
@@ -11,34 +13,81 @@ import Workshop from './pages/Workshop'
 import Costs from './pages/Costs'
 import Cron from './pages/Cron'
 import Scout from './pages/Scout'
-// Doc Digest removed — may return as Memory Explorer
 import Agents from './pages/Agents'
 import Settings from './pages/Settings'
 import Skills from './pages/Skills'
 import AWS from './pages/AWS'
 import Setup from './pages/Setup'
+import Admin from './pages/Admin'
+import Login from './pages/Login'
+import Register from './pages/Register'
 
-export default function App() {
+function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
+  const { user, loading, isAdmin } = useAuth()
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        color: 'rgba(255,255,255,0.5)',
+        fontSize: 14,
+      }}>
+        Loading...
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (adminOnly && !isAdmin) {
+    return <Navigate to="/" replace />
+  }
+
+  return <>{children}</>
+}
+
+function AppContent() {
   const location = useLocation()
   const navigate = useNavigate()
   const isMobile = useIsMobile()
+  const { user, loading } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Check if setup is needed on initial app load (non-blocking)
   useEffect(() => {
-    if (location.pathname !== '/setup') {
-      fetch('/api/setup')
+    if (location.pathname !== '/setup' && user) {
+      apiFetch('/api/setup')
         .then(r => r.json())
         .then(data => {
           if (data.needsSetup) navigate('/setup')
         })
         .catch(() => {}) // Ignore errors — just show dashboard
     }
-  }, []) // Run once on mount, not on every route change
+  }, [user]) // Run when user changes (login)
+
+  // Don't render main layout for auth pages
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/register'
+  if (isAuthPage) {
+    return (
+      <div className="macos-desktop" style={{ height: '100vh', overflow: 'hidden', maxWidth: '100vw' }}>
+        <AnimatePresence mode="wait">
+          <Routes location={location} key={location.pathname}>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+          </Routes>
+        </AnimatePresence>
+      </div>
+    )
+  }
 
   // Hide global chat widget on Conversations page (has its own chat)
   const hideChatWidget = isMobile && location.pathname === '/conversations'
-  
+
   // Hide sidebar and chat widget on setup page
   const isSetupPage = location.pathname === '/setup'
 
@@ -84,7 +133,7 @@ export default function App() {
 
       {/* Sidebar (hidden on setup) */}
       {!isSetupPage && <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />}
-      
+
       <main style={{
         flex: 1,
         overflowY: 'auto',
@@ -101,18 +150,18 @@ export default function App() {
         }}>
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
-              <Route path="/setup" element={<Setup />} />
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/conversations" element={<Chat />} />
-              <Route path="/workshop" element={<Workshop />} />
-              <Route path="/costs" element={<Costs />} />
-              <Route path="/cron" element={<Cron />} />
-              <Route path="/scout" element={<Scout />} />
-              {/* Doc Digest removed */}
-              <Route path="/agents" element={<Agents />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/skills" element={<Skills />} />
-              <Route path="/aws" element={<AWS />} />
+              <Route path="/setup" element={<ProtectedRoute><Setup /></ProtectedRoute>} />
+              <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/conversations" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+              <Route path="/workshop" element={<ProtectedRoute><Workshop /></ProtectedRoute>} />
+              <Route path="/costs" element={<ProtectedRoute><Costs /></ProtectedRoute>} />
+              <Route path="/cron" element={<ProtectedRoute><Cron /></ProtectedRoute>} />
+              <Route path="/scout" element={<ProtectedRoute><Scout /></ProtectedRoute>} />
+              <Route path="/agents" element={<ProtectedRoute><Agents /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+              <Route path="/skills" element={<ProtectedRoute><Skills /></ProtectedRoute>} />
+              <Route path="/aws" element={<ProtectedRoute><AWS /></ProtectedRoute>} />
+              <Route path="/admin" element={<ProtectedRoute adminOnly><Admin /></ProtectedRoute>} />
             </Routes>
           </AnimatePresence>
         </div>
@@ -121,5 +170,13 @@ export default function App() {
       {/* Global chat widget — hidden on pages with built-in chat (mobile) and setup page */}
       {!hideChatWidget && !isSetupPage && <ChatWidget />}
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   )
 }

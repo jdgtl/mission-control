@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { CheckCircle, ArrowRight, ArrowLeft, Settings, Zap, Search } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
 import { useIsMobile } from '../lib/useIsMobile'
+import { apiFetch } from '../lib/api'
 
 interface SetupData {
   dashboardName: string
@@ -93,7 +94,7 @@ export default function Setup() {
 
   const fetchSetupStatus = async () => {
     try {
-      const response = await fetch('/api/setup')
+      const response = await apiFetch('/api/setup')
       const data = await response.json()
       setStatus(data)
       
@@ -132,9 +133,8 @@ export default function Setup() {
         }
       }
       
-      const response = await fetch('/api/setup', {
+      const response = await apiFetch('/api/setup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
       

@@ -7,6 +7,7 @@ import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
 import AnimatedCounter from '../components/AnimatedCounter'
 import { useApi, timeAgo } from '../lib/hooks'
+import { apiFetch } from '../lib/api'
 
 export default function Agents() {
   const m = useIsMobile()
@@ -62,9 +63,8 @@ export default function Agents() {
 
   const handleCreateAgent = async () => {
     try {
-      const response = await fetch('/api/agents/create', {
+      const response = await apiFetch('/api/agents/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(createForm)
       })
       

@@ -5,6 +5,7 @@ import PageTransition from '../components/PageTransition'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import { useApi } from '../lib/hooks'
+import { apiFetch } from '../lib/api'
 
 interface AWSService {
   name: string
@@ -115,9 +116,8 @@ export default function AWS() {
   const handleSetAgentModel = async (modelId: string) => {
     setActionStatus('loading')
     try {
-      const res = await fetch('/api/model', {
+      const res = await apiFetch('/api/model', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: `amazon-bedrock/${modelId}` }),
       })
       if (res.ok) {
@@ -140,9 +140,8 @@ export default function AWS() {
     setGeneratedImageUrl('')
     setActionMessage('Generating... this takes 10-30 seconds')
     try {
-      const res = await fetch('/api/aws/generate-image', {
+      const res = await apiFetch('/api/aws/generate-image', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId, prompt }),
       })
       const data = await res.json()
@@ -163,7 +162,7 @@ export default function AWS() {
   const handleTestService = async (name: string) => {
     setTestingService(name)
     try {
-      const res = await fetch('/api/aws/services')
+      const res = await apiFetch('/api/aws/services')
       setTestResults(prev => ({ ...prev, [name]: res.ok ? 'success' : 'error' }))
     } catch { setTestResults(prev => ({ ...prev, [name]: 'error' })) }
     setTestingService(null)
