@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Activity, Cpu, MessageSquare, Database, Radio, Heart,
   BarChart3, Zap, Mail, Calendar, Code, CheckCircle, Search,
-  Clock, Loader2, Play, ArrowRight, Bell
+  Clock, Loader2, Play, ArrowRight, Bell, ArrowUpCircle
 } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
 import GlassCard from '../components/GlassCard'
@@ -17,6 +17,7 @@ const feedIcons: Record<string, any> = {
   search: Search,
   clock: Clock,
   loader: Loader2,
+  'arrow-up-circle': ArrowUpCircle,
 }
 
 const feedColors: Record<string, string> = {
@@ -25,6 +26,7 @@ const feedColors: Record<string, string> = {
   scout_found: '#FF9500',
   scout_deployed: '#BF5AF2',
   cron_run: '#8E8E93',
+  update_available: '#FF9500',
 }
 
 function QuickActionsBar() {
@@ -172,7 +174,10 @@ export default function Dashboard() {
   const { data, loading } = useApi<any>('/api/status', 30000)
   const { data: activityData } = useApi<any>('/api/activity', 10000)
   const { data: sessionsData } = useApi<any>('/api/sessions', 15000)
+  const { data: versionData } = useApi<any>('/api/system/version', 60000)
   const [countdown, setCountdown] = useState('')
+  const [updating, setUpdating] = useState(false)
+  const [updateResult, setUpdateResult] = useState<string | null>(null)
 
   useEffect(() => {
     if (!data?.heartbeat?.lastChecks) return
@@ -191,6 +196,26 @@ export default function Dashboard() {
     }, 1000)
     return () => clearInterval(interval)
   }, [data])
+
+  const handleUpdate = async () => {
+    if (updating) return
+    setUpdating(true)
+    setUpdateResult(null)
+    try {
+      const res = await fetch('/api/system/update', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      const result = await res.json()
+      setUpdateResult(result.message || 'Update triggered')
+      // MC will restart — poll until it comes back
+      if (result.status === 'updating') {
+        setTimeout(() => window.location.reload(), 15000)
+      }
+    } catch {
+      setUpdateResult('Update request sent — reloading...')
+      setTimeout(() => window.location.reload(), 10000)
+    } finally {
+      setUpdating(false)
+    }
+  }
 
   if (loading || !data) {
     return (
@@ -237,8 +262,17 @@ export default function Dashboard() {
                   <h2 style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>{displayName}</h2>
                   <StatusBadge status="active" pulse />
                 </div>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {m ? agent.heartbeatInterval : `${agent.model} · ${agent.heartbeatInterval} · ${agent.totalAgents} agents`}
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {m ? agent.heartbeatInterval : `${agent.model}${versionData?.currentVersion ? ` · v${versionData.currentVersion}` : ''} · ${agent.heartbeatInterval} · ${agent.totalAgents} agents`}
+                  {versionData?.updateAvailable && (
+                    <span style={{
+                      fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                      background: 'rgba(255,149,0,0.15)', color: '#FF9500', border: '1px solid rgba(255,149,0,0.3)',
+                      whiteSpace: 'nowrap', cursor: 'pointer',
+                    }} onClick={() => navigate('/settings')}>
+                      Update available
+                    </span>
+                  )}
                 </p>
                 {/* Last Active timestamp */}
                 {sessions.length > 0 && (
@@ -393,22 +427,49 @@ export default function Dashboard() {
 
                         {/* Action button */}
                         {item.actionable && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); navigate(item.actionUrl || '/workshop'); }}
-                            style={{
-                              alignSelf: 'center', padding: '5px 10px', borderRadius: 7, flexShrink: 0,
-                              border: `1px solid ${color}30`, background: `${color}10`,
-                              color, fontSize: 10, fontWeight: 600, cursor: 'pointer',
-                              display: 'flex', alignItems: 'center', gap: 4,
-                            }}
-                          >
-                            {item.actionLabel || 'View'} <ArrowRight size={10} />
-                          </button>
+                          item.type === 'update_available' ? (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleUpdate(); }}
+                              disabled={updating}
+                              style={{
+                                alignSelf: 'center', padding: '5px 10px', borderRadius: 7, flexShrink: 0,
+                                border: '1px solid rgba(255,149,0,0.3)', background: 'rgba(255,149,0,0.1)',
+                                color: '#FF9500', fontSize: 10, fontWeight: 600,
+                                cursor: updating ? 'not-allowed' : 'pointer',
+                                display: 'flex', alignItems: 'center', gap: 4,
+                                opacity: updating ? 0.7 : 1,
+                              }}
+                            >
+                              {updating ? <><Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> Updating...</> : <>{item.actionLabel || 'Update Now'} <ArrowUpCircle size={10} /></>}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); navigate(item.actionUrl || '/workshop'); }}
+                              style={{
+                                alignSelf: 'center', padding: '5px 10px', borderRadius: 7, flexShrink: 0,
+                                border: `1px solid ${color}30`, background: `${color}10`,
+                                color, fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: 4,
+                              }}
+                            >
+                              {item.actionLabel || 'View'} <ArrowRight size={10} />
+                            </button>
+                          )
                         )}
                       </div>
                     )
                   })}
                 </div>
+                {updateResult && (
+                  <div style={{
+                    marginTop: 12, padding: '8px 12px', borderRadius: 6,
+                    background: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.3)',
+                    fontSize: 11, color: '#FF9500',
+                  }}>
+                    {updating && <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', display: 'inline-block', marginRight: 6, verticalAlign: 'middle' }} />}
+                    {updateResult}
+                  </div>
+                )}
               </div>
             </GlassCard>
           </div>

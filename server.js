@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { execSync } = require('child_process');
+const { execSync, exec } = require('child_process');
 const multer = require('multer');
 
 // ========== CONFIG: Load mc-config.json (or create from defaults) ==========
@@ -853,8 +853,26 @@ app.get('/api/activity', async (req, res) => {
       }
     } catch(e) {}
 
-    // Sort by time (newest first)
+    // 6. Update available notification
+    if (updateCache.updateAvailable && updateCache.updateDetail) {
+      feed.push({
+        id: 'update-available',
+        type: 'update_available',
+        icon: 'arrow-up-circle',
+        title: 'OpenClaw update available',
+        detail: updateCache.updateDetail,
+        time: updateCache.lastChecked || new Date().toISOString(),
+        actionable: true,
+        actionLabel: 'Update Now',
+        actionUrl: '/settings',
+        pinned: true,
+      });
+    }
+
+    // Sort by time (newest first), but pinned items float to top
     feed.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
       const ta = a.time ? new Date(a.time).getTime() : 0;
       const tb = b.time ? new Date(b.time).getTime() : 0;
       return tb - ta;
@@ -2571,6 +2589,98 @@ app.post('/api/settings/import', upload.single('config'), (req, res) => {
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ========== SYSTEM: OpenClaw Update Checker ==========
+let updateCache = {
+  currentVersion: null,
+  latestVersion: null,
+  updateAvailable: false,
+  updateDetail: null,
+  lastChecked: null,
+  checking: false,
+};
+
+async function checkForUpdates() {
+  if (updateCache.checking) return updateCache;
+  updateCache.checking = true;
+  try {
+    const currentVersion = execSync('openclaw --version 2>/dev/null', { timeout: 10000, encoding: 'utf8' }).trim();
+    updateCache.currentVersion = currentVersion;
+
+    const statusOutput = execSync('openclaw update status 2>/dev/null', { timeout: 15000, encoding: 'utf8' });
+    // Parse the table output: look for "Update" row value like "pnpm · npm latest 2026.2.6-3"
+    // If a newer version exists, it shows something like "2026.2.6-3 → 2026.2.7-1"
+    const updateLine = statusOutput.split('\n').find(l => l.includes('Update'));
+    const latestMatch = updateLine ? updateLine.match(/latest\s+([\d.]+-?\d*)/i) : null;
+    const arrowMatch = updateLine ? updateLine.match(/([\d.]+-?\d*)\s*→\s*([\d.]+-?\d*)/) : null;
+
+    if (arrowMatch) {
+      // Explicit upgrade available: "current → newer"
+      updateCache.latestVersion = arrowMatch[2];
+      updateCache.updateAvailable = true;
+      updateCache.updateDetail = `${arrowMatch[1]} → ${arrowMatch[2]}`;
+    } else if (latestMatch && latestMatch[1] !== currentVersion) {
+      updateCache.latestVersion = latestMatch[1];
+      updateCache.updateAvailable = true;
+      updateCache.updateDetail = `${currentVersion} → ${latestMatch[1]}`;
+    } else {
+      updateCache.latestVersion = currentVersion;
+      updateCache.updateAvailable = false;
+      updateCache.updateDetail = null;
+    }
+    updateCache.lastChecked = new Date().toISOString();
+  } catch (e) {
+    console.error('[Update Check]', e.message);
+    // Keep previous cache on error, just update timestamp
+    updateCache.lastChecked = new Date().toISOString();
+  } finally {
+    updateCache.checking = false;
+  }
+  return updateCache;
+}
+
+// Check on startup + every 6 hours
+checkForUpdates();
+setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
+
+// GET /api/system/version — return cached update info
+app.get('/api/system/version', (req, res) => {
+  res.json(updateCache);
+});
+
+// POST /api/system/update — trigger openclaw update
+app.post('/api/system/update', (req, res) => {
+  if (!updateCache.updateAvailable) {
+    return res.json({ status: 'up_to_date', message: 'Already on latest version', version: updateCache.currentVersion });
+  }
+
+  // Run update in child process
+  const child = exec('openclaw update --yes 2>&1', { timeout: 120000 }, (err, stdout, stderr) => {
+    if (err) {
+      console.error('[Update] Failed:', err.message);
+    } else {
+      console.log('[Update] Success:', stdout.substring(0, 200));
+    }
+
+    // Restart gateway after update
+    try {
+      execSync('openclaw gateway restart 2>&1', { timeout: 30000 });
+      console.log('[Update] Gateway restarted');
+    } catch (e) {
+      console.error('[Update] Gateway restart failed:', e.message);
+    }
+
+    // Refresh version cache
+    updateCache.updateAvailable = false;
+    checkForUpdates();
+
+    // Restart Mission Control (systemd will bring it back)
+    console.log('[Update] Restarting Mission Control...');
+    setTimeout(() => process.exit(0), 1000);
+  });
+
+  res.json({ status: 'updating', message: `Updating OpenClaw ${updateCache.updateDetail || ''}... Mission Control will restart automatically.` });
 });
 
 // SPA catch-all: serve index.html for all non-API routes
