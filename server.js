@@ -1638,8 +1638,10 @@ app.get('/api/settings', async (req, res) => {
       : {};
 
     // Sanitize config (remove sensitive data)
+    const modelConfig = configData.agents?.defaults?.model || {};
     const sanitized = {
-      model: configData.model || 'anthropic.claude-3-opus-20240229-v1:0',
+      model: modelConfig.primary || configData.model || 'unknown',
+      modelFallbacks: modelConfig.fallbacks || [],
       gateway_port: GATEWAY_PORT,
       memory_path: MEMORY_PATH,
       skills_path: SKILLS_PATH,
@@ -2609,6 +2611,96 @@ app.get('/api/system/info', (req, res) => {
     updateAvailable: updateCache.updateAvailable || false,
     updateDetail: updateCache.updateDetail || null,
   });
+});
+
+// ========== SYSTEM: Model Routing (read-only) ==========
+app.get('/api/system/models', (req, res) => {
+  try {
+    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
+    const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
+    const modelConfig = config.agents?.defaults?.model || {};
+    const modelDefs = config.agents?.defaults?.models || {};
+
+    const primary = modelConfig.primary || 'unknown';
+    const fallbacks = modelConfig.fallbacks || [];
+
+    // Build display-friendly list with aliases
+    const formatModel = (id) => {
+      const alias = modelDefs[id]?.alias;
+      const short = id.replace(/^synthetic\/hf:/, '').replace(/^us\.anthropic\./, '');
+      return { id, alias: alias || null, displayName: alias || short };
+    };
+
+    res.json({
+      primary: formatModel(primary),
+      fallbacks: fallbacks.map(formatModel),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ========== SYSTEM: Heartbeat Status (read-only) ==========
+app.get('/api/system/heartbeat', (req, res) => {
+  try {
+    let lastEvent = null;
+    try {
+      lastEvent = JSON.parse(execSync('openclaw system heartbeat last 2>/dev/null', { timeout: 10000, encoding: 'utf8' }));
+    } catch {}
+
+    // Read heartbeat state file for extra info
+    let stateFile = {};
+    try {
+      stateFile = JSON.parse(fs.readFileSync(path.join(MEMORY_PATH, 'heartbeat-state.json'), 'utf8'));
+    } catch {}
+
+    // Get interval from openclaw status
+    let interval = '1h';
+    try {
+      const ocStatus = execSync('openclaw status 2>/dev/null', { timeout: 10000, encoding: 'utf8' });
+      const match = ocStatus.match(/Heartbeat\s*│\s*(\w+)/);
+      if (match) interval = match[1];
+    } catch {}
+
+    res.json({
+      interval,
+      lastEvent: lastEvent ? {
+        time: lastEvent.ts ? new Date(lastEvent.ts).toISOString() : null,
+        status: lastEvent.status || 'unknown',
+        reason: lastEvent.reason || null,
+        channel: lastEvent.channel || null,
+        durationMs: lastEvent.durationMs || null,
+      } : null,
+      lastChecks: stateFile.lastChecks || {},
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ========== SYSTEM: Enhancements / Roadmap ==========
+const ENHANCEMENTS_PATH = path.join(__dirname, 'enhancements.md');
+
+app.get('/api/system/enhancements', (req, res) => {
+  try {
+    const content = fs.existsSync(ENHANCEMENTS_PATH)
+      ? fs.readFileSync(ENHANCEMENTS_PATH, 'utf8')
+      : '';
+    res.json({ content });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/system/enhancements', (req, res) => {
+  try {
+    const { content } = req.body;
+    if (typeof content !== 'string') return res.status(400).json({ error: 'content required' });
+    fs.writeFileSync(ENHANCEMENTS_PATH, content, 'utf8');
+    res.json({ status: 'saved' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ========== SYSTEM: OpenClaw Update Checker ==========
