@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Activity, Cpu, MessageSquare, Database, Radio, Heart,
   BarChart3, Zap, Mail, Calendar, Code, CheckCircle, Search,
-  Clock, Loader2, Play, ArrowRight, Bell, ArrowUpCircle
+  Clock, Loader2, Play, ArrowRight, Bell, ArrowUpCircle,
 } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
 import GlassCard from '../components/GlassCard'

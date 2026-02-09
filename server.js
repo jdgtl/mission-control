@@ -2591,6 +2591,26 @@ app.post('/api/settings/import', upload.single('config'), (req, res) => {
   }
 });
 
+// ========== SYSTEM: System Info ==========
+app.get('/api/system/info', (req, res) => {
+  let openclawVersion = updateCache.currentVersion || 'unknown';
+  if (!openclawVersion || openclawVersion === 'unknown') {
+    try {
+      openclawVersion = execSync('openclaw --version 2>/dev/null', { timeout: 5000, encoding: 'utf8' }).trim();
+    } catch { openclawVersion = 'unknown'; }
+  }
+
+  res.json({
+    missionControlVersion: '2.0.0',
+    openclawVersion,
+    nodeVersion: process.version,
+    platform: `${process.platform} ${process.arch}`,
+    uptime: Math.floor(process.uptime()),
+    updateAvailable: updateCache.updateAvailable || false,
+    updateDetail: updateCache.updateDetail || null,
+  });
+});
+
 // ========== SYSTEM: OpenClaw Update Checker ==========
 let updateCache = {
   currentVersion: null,

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Settings2, ChevronDown, Save, RefreshCw, Shield, Database, Cpu, Globe, Download, Upload, Clock, Zap } from 'lucide-react'
+import { Settings2, ChevronDown, Save, RefreshCw, Shield, Database, Cpu, Globe, Download, Upload, Clock, Zap, ArrowUpCircle, Loader2 } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
@@ -130,30 +130,7 @@ export default function Settings() {
           <HeartbeatConfigCard isMobile={isMobile} />
 
           {/* System Information Card */}
-          <GlassCard noPad>
-            <div style={{ padding: isMobile ? 16 : 24 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,149,0,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Database size={18} style={{ color: '#FF9500' }} />
-                </div>
-                <h2 style={{ fontSize: 15, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>System Information</h2>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {[
-                  { label: 'Mission Control Version', value: 'v2.0.0' },
-                  { label: 'OpenClaw Version', value: 'v1.5.2' },
-                  { label: 'Node.js Version', value: 'v20.15.0' },
-                  { label: 'Platform', value: 'Linux x64' },
-                ].map((item) => (
-                  <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>{item.label}</span>
-                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.92)' }}>{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </GlassCard>
+          <SystemInfoCard isMobile={isMobile} />
 
           {/* Export/Import Configuration Card */}
           <ExportImportCard isMobile={isMobile} />
@@ -414,6 +391,135 @@ function HeartbeatConfigCard({ isMobile }: { isMobile: boolean }) {
             </div>
           )}
         </div>
+      </div>
+    </GlassCard>
+  )
+}
+
+function SystemInfoCard({ isMobile }: { isMobile: boolean }) {
+  const { data: sysInfo } = useApi<any>('/api/system/info', 60000)
+  const [updating, setUpdating] = useState(false)
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null)
+
+  const handleUpdate = async () => {
+    if (updating) return
+    setUpdating(true)
+    setUpdateMsg(null)
+    try {
+      const res = await fetch('/api/system/update', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      const result = await res.json()
+      setUpdateMsg(result.message || 'Update triggered')
+      if (result.status === 'updating') {
+        setTimeout(() => window.location.reload(), 15000)
+      }
+    } catch {
+      setUpdateMsg('Update request sent — reloading...')
+      setTimeout(() => window.location.reload(), 10000)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  const formatUptime = (seconds: number) => {
+    if (!seconds) return '—'
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    return h > 0 ? `${h}h ${m}m` : `${m}m`
+  }
+
+  const rows = sysInfo ? [
+    { label: 'Mission Control', value: `v${sysInfo.missionControlVersion}` },
+    { label: 'OpenClaw', value: `v${sysInfo.openclawVersion}`, highlight: sysInfo.updateAvailable },
+    { label: 'Node.js', value: sysInfo.nodeVersion },
+    { label: 'Platform', value: sysInfo.platform },
+    { label: 'MC Uptime', value: formatUptime(sysInfo.uptime) },
+  ] : [
+    { label: 'Mission Control', value: '...' },
+    { label: 'OpenClaw', value: '...' },
+    { label: 'Node.js', value: '...' },
+    { label: 'Platform', value: '...' },
+  ]
+
+  return (
+    <GlassCard noPad>
+      <div style={{ padding: isMobile ? 16 : 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,149,0,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Database size={18} style={{ color: '#FF9500' }} />
+          </div>
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>System Information</h2>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {rows.map((item) => (
+            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>{item.label}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.92)' }}>{item.value}</span>
+                {item.highlight && (
+                  <span style={{
+                    fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 4,
+                    background: 'rgba(255,149,0,0.15)', color: '#FF9500', border: '1px solid rgba(255,149,0,0.3)',
+                  }}>
+                    Update
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {sysInfo?.updateAvailable && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{
+              padding: '10px 14px', borderRadius: 8,
+              background: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.2)',
+              marginBottom: 12,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <ArrowUpCircle size={14} style={{ color: '#FF9500' }} />
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#FF9500' }}>Update Available</span>
+              </div>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>{sysInfo.updateDetail}</p>
+            </div>
+
+            <button
+              onClick={handleUpdate}
+              disabled={updating}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '12px 16px', borderRadius: 10, border: 'none',
+                cursor: updating ? 'not-allowed' : 'pointer',
+                background: updating ? 'rgba(255,149,0,0.3)' : '#FF9500',
+                color: '#fff', fontSize: 13, fontWeight: 500,
+                opacity: updating ? 0.5 : 1,
+                transition: 'all 0.2s',
+              }}
+            >
+              {updating ? (
+                <>
+                  <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                  <span>Updating...</span>
+                </>
+              ) : (
+                <>
+                  <ArrowUpCircle size={16} />
+                  <span>Update Now</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {updateMsg && (
+          <div style={{
+            marginTop: 12, padding: '8px 12px', borderRadius: 6,
+            background: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.3)',
+            fontSize: 11, color: '#FF9500',
+          }}>
+            {updateMsg}
+          </div>
+        )}
       </div>
     </GlassCard>
   )
