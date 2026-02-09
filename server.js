@@ -254,7 +254,7 @@ const STATUS_CACHE_TTL = 60000; // 60 seconds
 async function refreshStatusCache() {
   try {
     // Run all slow operations in parallel
-    const [openclawStatus, notionActivity, sessionData] = await Promise.allSettled([
+    const [openclawStatus, notionActivity, sessionData, heartbeatLast] = await Promise.allSettled([
       new Promise((resolve) => {
         try {
           resolve(execSync('openclaw status 2>&1', { timeout: 8000, encoding: 'utf8' }));
@@ -264,11 +264,19 @@ async function refreshStatusCache() {
       }),
       fetchNotionActivity(8).catch(() => null),
       fetchSessions(50).catch(() => ({ count: 0, sessions: [] })),
+      new Promise((resolve) => {
+        try {
+          resolve(JSON.parse(execSync('openclaw system heartbeat last 2>/dev/null', { timeout: 15000, encoding: 'utf8' })));
+        } catch (e) {
+          resolve(null);
+        }
+      }),
     ]);
 
     const ocStatus = openclawStatus.status === 'fulfilled' ? openclawStatus.value : '';
     const activity = notionActivity.status === 'fulfilled' ? notionActivity.value : null;
     const sessions = sessionData.status === 'fulfilled' ? sessionData.value : { count: 0, sessions: [] };
+    const hbLast = heartbeatLast.status === 'fulfilled' ? heartbeatLast.value : null;
 
     // Parse openclaw status
     const sessionsMatch = ocStatus.match(/(\d+) active/);
@@ -278,10 +286,23 @@ async function refreshStatusCache() {
     const agentsMatch = ocStatus.match(/Agents\s*│\s*(\d+)/);
 
     const channels = [];
-    const channelRegex = /│\s*(Discord|WhatsApp|Telegram)\s*│\s*(ON|OFF)\s*│\s*(OK|OFF|ERROR)\s*│\s*(.+?)\s*│/g;
+    const channelRegex = /│\s*(Discord|WhatsApp|Telegram|Slack)\s*│\s*(ON|OFF)\s*│\s*(OK|OFF|ERROR)\s*│\s*(.+?)\s*│/g;
     let m;
     while ((m = channelRegex.exec(ocStatus)) !== null) {
       channels.push({ name: m[1], enabled: m[2], state: m[3], detail: m[4].trim() });
+    }
+    // Fallback: check openclaw.json for enabled channels if regex found nothing
+    if (channels.length === 0) {
+      try {
+        const ocConfig = JSON.parse(fs.readFileSync(path.join(process.env.HOME, '.openclaw', 'openclaw.json'), 'utf8'));
+        if (ocConfig.channels) {
+          for (const [name, cfg] of Object.entries(ocConfig.channels)) {
+            if (cfg.enabled) {
+              channels.push({ name: name.charAt(0).toUpperCase() + name.slice(1), enabled: 'ON', state: 'OK', detail: cfg.mode || 'connected' });
+            }
+          }
+        }
+      } catch {}
     }
 
     // Token usage
@@ -299,11 +320,20 @@ async function refreshStatusCache() {
       recentActivity = buildActivityFromMemory();
     }
 
-    // Heartbeat state (fast, filesystem only)
+    // Heartbeat state (filesystem + native openclaw data)
     let heartbeat = {};
     try {
       heartbeat = JSON.parse(fs.readFileSync(path.join(MEMORY_PATH, 'heartbeat-state.json'), 'utf8'));
     } catch { heartbeat = { lastHeartbeat: null, lastChecks: {} }; }
+    // Merge native heartbeat data from openclaw CLI
+    if (hbLast && hbLast.ts) {
+      const hbTime = new Date(hbLast.ts).toISOString();
+      if (!heartbeat.lastHeartbeat || hbTime > heartbeat.lastHeartbeat) {
+        heartbeat.lastHeartbeat = hbTime;
+      }
+      heartbeat.lastChecks = heartbeat.lastChecks || {};
+      heartbeat.lastChecks.system = { time: hbTime, status: hbLast.status || 'ok', reason: hbLast.reason, channel: hbLast.channel };
+    }
 
     statusCache = { sessionsMatch, modelMatch, memoryMatch, heartbeatInterval, agentsMatch, channels, tokenUsage, recentActivity, heartbeat };
     statusCacheTime = Date.now();
@@ -388,14 +418,14 @@ app.get('/api/status', async (req, res) => {
       refreshStatusCache(); // don't await — fire and forget
     }
 
-    // If no cache yet (first request), wait for it
+    // If no cache yet (first request), kick off refresh but don't block
     if (!statusCache) {
-      await refreshStatusCache();
+      refreshStatusCache(); // will populate on next request
     }
 
     const { sessionsMatch, modelMatch, memoryMatch, heartbeatInterval, agentsMatch, channels, tokenUsage, recentActivity, heartbeat } = statusCache || {};
 
-    // Read heartbeat state (fast, always fresh)
+    // Read heartbeat state
     let hb = heartbeat || {};
     try {
       hb = JSON.parse(fs.readFileSync(path.join(MEMORY_PATH, 'heartbeat-state.json'), 'utf8'));
@@ -411,11 +441,11 @@ app.get('/api/status', async (req, res) => {
         memoryFiles: memoryMatch ? parseInt(memoryMatch[1]) : 46,
         memoryChunks: memoryMatch ? parseInt(memoryMatch[2]) : 225,
         heartbeatInterval: heartbeatInterval ? heartbeatInterval[1] : '1h',
-        channels
+        channels: channels || []
       },
       heartbeat: hb,
       recentActivity: recentActivity || [],
-      tokenUsage: tokenUsage || { used: 0, limit: 1000000, percentage: 0 }
+      tokenUsage: tokenUsage || { used: 0, limit: 0, percentage: 0 }
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -765,13 +795,71 @@ app.get('/api/activity', async (req, res) => {
       }
     } catch(e) {}
     
+    // 4. Gateway session activity
+    try {
+      const sessions = await fetchSessions(20);
+      const sessionList = sessions.sessions || [];
+      for (const s of sessionList.slice(0, 15)) {
+        const lastMsg = s.lastMessage || s.preview || '';
+        const key = s.key || s.id || '';
+        let channel = s.channel || 'system';
+        if (key.includes('slack')) channel = 'slack';
+        else if (key.includes('openai')) channel = 'mission-control';
+        else if (key.includes('main:main')) channel = 'slack';
+        const channelLabel = { slack: 'Slack', 'mission-control': 'Mission Control Chat', system: 'System' }[channel] || channel;
+        const rawTime = s.updatedAt || s.createdAt;
+        if (rawTime) {
+          const timeISO = typeof rawTime === 'number' ? new Date(rawTime).toISOString() : rawTime;
+          feed.push({
+            id: `session-${key}`,
+            type: 'session',
+            icon: channel === 'slack' ? 'message-circle' : channel === 'mission-control' ? 'monitor' : 'zap',
+            title: `${channelLabel} conversation`,
+            detail: lastMsg ? lastMsg.substring(0, 150) : `Session with ${s.totalTokens || 0} tokens`,
+            time: timeISO,
+            actionable: false,
+          });
+        }
+      }
+    } catch(e) {}
+
+    // 5. Daily memory entries
+    try {
+      for (const dayOffset of [0, 1, 2]) {
+        const d = new Date();
+        d.setDate(d.getDate() - dayOffset);
+        const dateStr = d.toISOString().split('T')[0];
+        const memPath = path.join(MEMORY_PATH, `${dateStr}.md`);
+        if (fs.existsSync(memPath)) {
+          const memContent = fs.readFileSync(memPath, 'utf8');
+          const memMtime = fs.statSync(memPath).mtime.toISOString();
+          const sections = memContent.split(/\n## /).slice(1);
+          sections.slice(0, 6).forEach((section, idx) => {
+            const firstLine = section.split('\n')[0].trim();
+            const title = firstLine.replace(/\*\*/g, '').substring(0, 80);
+            const bullets = section.split('\n').filter(l => /^[-*]\s/.test(l.trim()));
+            const detail = (bullets[0] || '').replace(/^[-*]\s*/, '').replace(/\*\*/g, '').substring(0, 120);
+            let type = 'general';
+            const lower = (title + ' ' + detail).toLowerCase();
+            if (lower.includes('fix') || lower.includes('bug') || lower.includes('crash')) type = 'security';
+            else if (lower.includes('build') || lower.includes('deploy') || lower.includes('dashboard') || lower.includes('setup')) type = 'development';
+            else if (lower.includes('email') || lower.includes('lead')) type = 'business';
+            else if (lower.includes('heartbeat')) type = 'heartbeat';
+            // Use file mtime for first section, offset earlier sections by index to keep order
+            const timeMs = new Date(memMtime).getTime() - idx * 60000;
+            if (title) feed.push({ id: `mem-${dateStr}-${feed.length}`, type: 'memory', icon: 'file-text', title, detail: detail || 'Activity logged', time: new Date(timeMs).toISOString() });
+          });
+        }
+      }
+    } catch(e) {}
+
     // Sort by time (newest first)
     feed.sort((a, b) => {
       const ta = a.time ? new Date(a.time).getTime() : 0;
       const tb = b.time ? new Date(b.time).getTime() : 0;
       return tb - ta;
     });
-    
+
     const result = { feed: feed.slice(0, 30), generated: new Date().toISOString() };
     activityCache = result;
     activityCacheTime = Date.now();
@@ -1187,7 +1275,7 @@ app.get('/api/costs', async (req, res) => {
         total: 0,
         tokens: dailyMap[dateStr] || 0,
         breakdown: {
-          'Claude Opus 4 (Bedrock)': 0,
+          'Kimi K2.5 (Synthetic)': 0,
         }
       });
     }
@@ -1201,7 +1289,7 @@ app.get('/api/costs', async (req, res) => {
         totalTokens,
         totalSessions: sessions.length,
         activeSessions: sessions.filter(s => (s.totalTokens || 0) > 0).length,
-        note: 'All LLM costs are $0 — using AWS Bedrock with included credits',
+        note: 'LLM costs: Synthetic (Kimi K2.5) included in subscription. Claude Code sessions use Anthropic Max plan.',
         budget: { monthly: 0, warning: 0 }
       },
       byService,
@@ -1380,12 +1468,12 @@ app.get('/api/agents', async (req, res) => {
 
     // Primary agent
     agents.push({
-      id: 'zinbot',
-      name: agentName || 'Agent',
+      id: 'ari',
+      name: 'Ari',
       role: 'Commander',
-      avatar: '🤖',
+      avatar: '💻',
       status: 'active',
-      model: mainSession ? (mainSession.model || '').replace('us.anthropic.', '').replace(/claude-opus-(\d+).*/, 'Claude Opus $1').replace(/-/g, ' ') : 'Claude Opus 4.6',
+      model: mainSession ? (mainSession.model || 'Kimi K2.5').replace('hf:moonshotai/', '').replace(/-/g, ' ') : 'Kimi K2.5',
       description: 'Primary AI agent. Manages all operations, communications, and development tasks.',
       lastActive: mainSession?.updatedAt ? new Date(mainSession.updatedAt).toISOString() : new Date().toISOString(),
       totalTokens: mainSession?.totalTokens || 0,
@@ -1478,7 +1566,7 @@ app.get('/api/agents', async (req, res) => {
     console.error('[Agents API]', e.message);
     res.json({
       agents: [
-        { id: 'zinbot', name: agentName || 'Agent', role: 'Commander', avatar: '🤖', status: 'active', model: 'Claude Opus 4.6', description: 'Primary agent (session data unavailable)', lastActive: new Date().toISOString(), totalTokens: 0 }
+        { id: 'ari', name: 'Ari', role: 'Commander', avatar: '💻', status: 'active', model: 'Kimi K2.5 (Synthetic)', description: 'Primary agent (session data unavailable)', lastActive: new Date().toISOString(), totalTokens: 0 }
       ],
       conversations: [],
       error: e.message
@@ -2390,9 +2478,22 @@ app.post('/api/heartbeat/run', async (req, res) => {
       body: JSON.stringify({ tool: 'cron', args: { action: 'wake', text: 'Manual heartbeat check from Mission Control', mode: 'now' } })
     });
     const data = await r.json();
+    // Persist heartbeat state so dashboard shows last run
+    try {
+      const statePath = path.join(MEMORY_PATH, 'heartbeat-state.json');
+      let state = {};
+      try { state = JSON.parse(fs.readFileSync(statePath, 'utf8')); } catch {}
+      state.lastHeartbeat = new Date().toISOString();
+      state.lastChecks = state.lastChecks || {};
+      state.lastChecks.manual = { time: new Date().toISOString(), status: data?.result ? 'ok' : 'error' };
+      fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+      // Bust the status cache so dashboard picks it up immediately
+      statusCache = null;
+      statusCacheTime = 0;
+    } catch {}
     res.json({ status: 'triggered', result: data });
-  } catch(e) { 
-    res.json({ status: 'error', error: e.message }); 
+  } catch(e) {
+    res.json({ status: 'error', error: e.message });
   }
 });
 

@@ -177,9 +177,10 @@ export default function Dashboard() {
   useEffect(() => {
     if (!data?.heartbeat?.lastChecks) return
     const interval = setInterval(() => {
-      const last = data.heartbeat.lastHeartbeat || Date.now() / 1000
-      const next = last + 3600
-      const remaining = next - Date.now() / 1000
+      const raw = data.heartbeat.lastHeartbeat
+      const lastMs = typeof raw === 'number' ? raw * 1000 : raw ? new Date(raw).getTime() : Date.now()
+      const nextMs = lastMs + 3600000
+      const remaining = (nextMs - Date.now()) / 1000
       if (remaining <= 0) {
         setCountdown('Overdue')
       } else {
@@ -242,7 +243,7 @@ export default function Dashboard() {
                 {/* Last Active timestamp */}
                 {sessions.length > 0 && (
                   <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
-                    Last active: {timeAgo(sessions.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())[0]?.updatedAt || '')}
+                    Last active: {timeAgo(sessions.sort((a: any, b: any) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())[0]?.updatedAt || '')}
                   </p>
                 )}
               </div>
@@ -457,7 +458,7 @@ export default function Dashboard() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center' }}>
                   <div>
                     <p style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', marginBottom: 4 }}>Last</p>
-                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>{heartbeat.lastHeartbeat ? timeAgo(new Date(heartbeat.lastHeartbeat * 1000).toISOString()) : '—'}</p>
+                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>{heartbeat.lastHeartbeat ? timeAgo(typeof heartbeat.lastHeartbeat === 'number' ? new Date(heartbeat.lastHeartbeat * 1000).toISOString() : heartbeat.lastHeartbeat) : '—'}</p>
                   </div>
                   <div>
                     <p style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', marginBottom: 4 }}>Next</p>
