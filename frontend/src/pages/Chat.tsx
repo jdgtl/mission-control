@@ -258,7 +258,13 @@ export default function Chat() {
   }
 
   const renderContent = (text: string) => {
-    return text
+    // Escape HTML entities first to prevent XSS
+    const escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+    return escaped
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;font-size:12px;">$1</code>')
       .replace(/\n/g, '<br/>')

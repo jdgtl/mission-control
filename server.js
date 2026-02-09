@@ -302,7 +302,7 @@ async function refreshStatusCache() {
             }
           }
         }
-      } catch {}
+      } catch (e) { console.error('[Status] Channel config parse error:', e.message); }
     }
 
     // Token usage
@@ -1817,7 +1817,7 @@ app.get('/api/aws/services', async (req, res) => {
       const sts = JSON.parse(stdout);
       account.id = sts.Account;
       account.user = sts.Arn.split('/').pop();
-    } catch {}
+    } catch (e) { console.error('[AWS] STS identity error:', e.message); }
 
     // Real services — check what's actually accessible
     const services = [];
@@ -1914,12 +1914,14 @@ app.post('/api/model', async (req, res) => {
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
-    // Signal gateway to reload config
-    const util = require('util');
-    const execPromise = util.promisify(require('child_process').exec);
+    // Signal gateway to reload config (safe: no shell interpolation)
     try {
-      await execPromise('kill -USR1 $(pgrep -f openclaw-gateway)', { timeout: 5000 });
-    } catch {}
+      const { execFileSync } = require('child_process');
+      const pids = execFileSync('pgrep', ['-f', 'openclaw-gateway'], { timeout: 5000 }).toString().trim().split('\n');
+      for (const pid of pids) {
+        if (/^\d+$/.test(pid)) process.kill(Number(pid), 'SIGUSR1');
+      }
+    } catch (e) { console.error('[Model] Gateway signal error:', e.message); }
 
     res.json({ ok: true, model, message: `Model switched to ${model}` });
   } catch (error) {
@@ -2049,15 +2051,19 @@ app.get('/api/aws/gallery', async (req, res) => {
   }
 });
 
-// Proxy S3 images
+// Proxy S3 images (with path/injection validation)
 app.get('/api/aws/s3-image/:key(*)', async (req, res) => {
   try {
     const key = decodeURIComponent(req.params.key);
-    const localCache = `/tmp/s3-cache-${key.replace(/\//g, '_')}`;
+    // Block path traversal and shell metacharacters
+    if (/\.\./.test(key) || /[;|&$`\\]/.test(key)) {
+      return res.status(400).json({ error: 'Invalid key' });
+    }
+    const safeName = key.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const localCache = `/tmp/s3-cache-${safeName}`;
     if (!fs.existsSync(localCache)) {
-      const util = require('util');
-      const execPromise = util.promisify(require('child_process').exec);
-      await execPromise(`aws s3 cp "s3://${S3_BUCKET}/${key}" "${localCache}"`, { timeout: 15000 });
+      const { execFileSync } = require('child_process');
+      execFileSync('aws', ['s3', 'cp', `s3://${S3_BUCKET}/${key}`, localCache], { timeout: 15000 });
     }
     res.type('png').sendFile(localCache);
   } catch (error) {
@@ -2300,10 +2306,13 @@ app.get('/api/sessions/:sessionKey/history', async (req, res) => {
     
     if (!session?.transcriptPath) return res.json({ messages: [], info: 'No transcript found' });
     
-    // Read JSONL transcript
+    // Read JSONL transcript (validate path stays within sessions dir)
     const transcriptDir = path.join(require('os').homedir(), '.openclaw/agents/main/sessions');
-    const transcriptFile = path.join(transcriptDir, session.transcriptPath);
-    
+    const transcriptFile = path.resolve(transcriptDir, session.transcriptPath);
+    if (!transcriptFile.startsWith(transcriptDir + path.sep)) {
+      return res.status(400).json({ messages: [], error: 'Invalid transcript path' });
+    }
+
     if (!fs.existsSync(transcriptFile)) return res.json({ messages: [], info: 'Transcript file missing' });
     
     const lines = fs.readFileSync(transcriptFile, 'utf8').split('\n').filter(Boolean);
@@ -2503,7 +2512,7 @@ app.post('/api/heartbeat/run', async (req, res) => {
       // Bust the status cache so dashboard picks it up immediately
       statusCache = null;
       statusCacheTime = 0;
-    } catch {}
+    } catch (e) { console.error('[Heartbeat] State write error:', e.message); }
     res.json({ status: 'triggered', result: data });
   } catch(e) {
     res.json({ status: 'error', error: e.message });
@@ -2639,7 +2648,7 @@ app.get('/api/system/heartbeat', (req, res) => {
     let lastEvent = null;
     try {
       lastEvent = JSON.parse(execSync('openclaw system heartbeat last 2>/dev/null', { timeout: 10000, encoding: 'utf8' }));
-    } catch {}
+    } catch (e) { console.error('[Heartbeat] Last event read error:', e.message); }
 
     // Read heartbeat state file for extra info
     let stateFile = {};
@@ -2653,7 +2662,7 @@ app.get('/api/system/heartbeat', (req, res) => {
       const ocStatus = execSync('openclaw status 2>/dev/null', { timeout: 10000, encoding: 'utf8' });
       const match = ocStatus.match(/Heartbeat\s*│\s*(\w+)/);
       if (match) interval = match[1];
-    } catch {}
+    } catch (e) { console.error('[Heartbeat] Interval read error:', e.message); }
 
     res.json({
       interval,
