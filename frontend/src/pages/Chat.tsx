@@ -85,7 +85,7 @@ function modelShort(model: string): string {
 
 export default function Chat() {
   const m = useIsMobile()
-  const { data: sessionsData } = useApi<any>('/api/sessions', 15000)
+  const { data: sessionsData, refetch: refetchSessions } = useApi<any>('/api/sessions', 15000)
   const [activeSession, setActiveSession] = useState<string | null>(null)
   const [activeSessionName, setActiveSessionName] = useState('')
   const [historyMessages, setHistoryMessages] = useState<any[]>([])
@@ -196,8 +196,9 @@ export default function Chat() {
       await fetch(`/api/sessions/${encodeURIComponent(sessionKey)}/close`, {
         method: 'DELETE'
       })
-      // Refresh sessions data
-      window.location.reload()
+      // Refresh sessions data and clear selection
+      setActiveSession(null)
+      refetchSessions()
     } catch (err) {
       console.error('Failed to close session:', err)
     } finally {

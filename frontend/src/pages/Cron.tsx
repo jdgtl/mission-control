@@ -531,7 +531,7 @@ export default function Cron() {
         headers: { 'Content-Type': 'application/json' }
       })
       if (response.ok) {
-        const jobName = jobs.find((j: any) => j.id === jobId)?.name || jobId
+        const jobName = data?.jobs?.find((j: any) => j.id === jobId)?.name || jobId
         setToast(`✅ "${jobName}" triggered!`)
         setTimeout(() => setToast(null), 4000)
         setTimeout(refetch, 1500)

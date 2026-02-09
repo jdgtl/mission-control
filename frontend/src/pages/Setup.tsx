@@ -31,9 +31,11 @@ interface SetupStatus {
   }
 }
 
+const currentYear = new Date().getFullYear()
+
 const scoutTemplates = {
   freelance: [
-    { q: '"looking for" "web developer" OR "website developer" remote 2026', category: 'freelance', source: 'web', weight: 1.0 },
+    { q: `"looking for" "web developer" OR "website developer" remote ${currentYear}`, category: 'freelance', source: 'web', weight: 1.0 },
     { q: 'site:x.com "hiring" OR "looking for" "react developer" OR "frontend developer" remote', category: 'twitter-jobs', source: 'twitter', weight: 0.9 },
     { q: 'site:reddit.com/r/forhire "looking for" react developer', category: 'reddit-gigs', source: 'reddit', weight: 0.8 }
   ],
@@ -43,14 +45,14 @@ const scoutTemplates = {
     { q: 'site:x.com openclaw "new feature" OR "just shipped" OR "tip"', category: 'openclaw', source: 'twitter', weight: 1.0 }
   ],
   bounties: [
-    { q: '"bug bounty" OR "vulnerability disclosure" program 2026', category: 'security', source: 'web', weight: 0.9 },
+    { q: `"bug bounty" OR "vulnerability disclosure" program ${currentYear}`, category: 'security', source: 'web', weight: 0.9 },
     { q: 'site:hackerone.com new program OR "just launched"', category: 'hackerone', source: 'web', weight: 0.8 },
     { q: '"responsible disclosure" reward program', category: 'disclosure', source: 'web', weight: 0.7 }
   ],
   grants: [
-    { q: '"startup grant" OR "startup competition" 2026 application deadline', category: 'funding', source: 'web', weight: 0.95 },
-    { q: '"innovation grant" OR "tech grant" europe 2026 open', category: 'eu-grants', source: 'web', weight: 0.9 },
-    { q: 'edtech funding OR "education startup grant" 2026', category: 'edtech-funding', source: 'web', weight: 0.85 }
+    { q: `"startup grant" OR "startup competition" ${currentYear} application deadline`, category: 'funding', source: 'web', weight: 0.95 },
+    { q: `"innovation grant" OR "tech grant" europe ${currentYear} open`, category: 'eu-grants', source: 'web', weight: 0.9 },
+    { q: `edtech funding OR "education startup grant" ${currentYear}`, category: 'edtech-funding', source: 'web', weight: 0.85 }
   ]
 }
 

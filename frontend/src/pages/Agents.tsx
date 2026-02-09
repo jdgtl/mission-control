@@ -10,16 +10,18 @@ import { useApi, timeAgo } from '../lib/hooks'
 
 export default function Agents() {
   const m = useIsMobile()
-  const { data, loading } = useApi<any>('/api/agents', 30000)
+  const { data, loading, refetch: refetchAgents } = useApi<any>('/api/agents', 30000)
   const { data: sessionsData } = useApi<any>('/api/sessions', 15000) // Add real sessions data
   const { data: modelsData } = useApi<any>('/api/models', 0)
   const { data: skillsData } = useApi<any>('/api/skills', 0)
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  // Use first configured model as default, or fallback
+  const defaultModel = modelsData?.[0]?.id || ''
   const [createForm, setCreateForm] = useState({
     name: '',
     description: '',
-    model: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+    model: '',
     systemPrompt: '',
     skills: [] as string[]
   })
@@ -28,21 +30,21 @@ export default function Agents() {
     {
       name: 'Research Bot',
       description: 'You research topics thoroughly and provide summaries with sources',
-      model: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+      model: defaultModel,
       systemPrompt: 'You research topics thoroughly and provide comprehensive summaries with sources. Focus on accuracy, credibility, and providing multiple perspectives on complex topics.',
       skills: ['web_search', 'web_fetch']
     },
     {
       name: 'Code Reviewer',
       description: 'You review code for bugs, security issues, and best practices',
-      model: 'us.anthropic.claude-opus-4-6-v1',
+      model: defaultModel,
       systemPrompt: 'You review code for bugs, security vulnerabilities, and adherence to best practices. Provide detailed feedback on code quality, performance, and maintainability.',
       skills: ['exec', 'read', 'write', 'edit']
     },
     {
       name: 'Content Writer',
       description: 'You write engaging content for blogs, social media, and marketing',
-      model: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+      model: defaultModel,
       systemPrompt: 'You write engaging, high-quality content for blogs, social media, and marketing materials. Focus on clear communication, compelling narratives, and audience engagement.',
       skills: ['web_search', 'image']
     }
@@ -71,12 +73,12 @@ export default function Agents() {
         setCreateForm({
           name: '',
           description: '',
-          model: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+          model: defaultModel,
           systemPrompt: '',
           skills: []
         })
         // Refresh the agents list
-        window.location.reload()
+        refetchAgents()
       }
     } catch (error) {
       console.error('Failed to create agent:', error)
@@ -383,32 +385,32 @@ export default function Agents() {
                 {
                   name: 'Research Assistant',
                   description: 'Searches the web, summarizes findings, writes reports',
-                  model: 'Claude Sonnet 4',
-                  modelId: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+                  model: modelsData?.[0]?.name || 'Primary Model',
+                  modelId: defaultModel,
                   systemPrompt: 'You are a thorough research assistant. Search the web comprehensively, analyze findings from multiple sources, and create detailed reports with citations. Focus on accuracy, credibility, and providing balanced perspectives.',
                   skills: ['web_search', 'web_fetch', 'write']
                 },
                 {
                   name: 'Code Reviewer',
                   description: 'Reviews PRs, finds bugs, suggests improvements',
-                  model: 'Claude Opus 4',
-                  modelId: 'us.anthropic.claude-opus-4-6-v1',
+                  model: modelsData?.[0]?.name || 'Primary Model',
+                  modelId: defaultModel,
                   systemPrompt: 'You are an expert code reviewer. Analyze code for bugs, security vulnerabilities, performance issues, and adherence to best practices. Provide detailed, actionable feedback with specific suggestions for improvement.',
                   skills: ['read', 'write', 'edit', 'exec']
                 },
                 {
                   name: 'Content Writer',
                   description: 'Drafts blog posts, social media, marketing copy',
-                  model: 'Claude Sonnet 4',
-                  modelId: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+                  model: modelsData?.[0]?.name || 'Primary Model',
+                  modelId: defaultModel,
                   systemPrompt: 'You are a skilled content writer specializing in engaging copy for blogs, social media, and marketing. Create compelling narratives that resonate with target audiences while maintaining brand voice and achieving clear objectives.',
                   skills: ['web_search', 'image', 'write']
                 },
                 {
                   name: 'Security Scanner',
                   description: 'Monitors bug bounties, scans for vulnerabilities',
-                  model: 'Claude Haiku 4',
-                  modelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+                  model: modelsData?.[1]?.name || modelsData?.[0]?.name || 'Secondary Model',
+                  modelId: modelsData?.[1]?.id || defaultModel,
                   systemPrompt: 'You are a security researcher focused on finding vulnerabilities and monitoring bug bounty programs. Analyze targets methodically, identify potential security weaknesses, and track new opportunities efficiently.',
                   skills: ['web_search', 'exec', 'read']
                 }

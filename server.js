@@ -438,8 +438,8 @@ app.get('/api/status', async (req, res) => {
         model: modelMatch ? modelMatch[1].replace('us.anthropic.','').replace(/claude-opus-(\d+)-(\d+).*/, 'Claude Opus $1.$2').replace(/claude-sonnet-(\d+).*/, 'Claude Sonnet $1').replace(/-/g,' ') : 'Claude Opus 4.6',
         activeSessions: sessionsMatch ? parseInt(sessionsMatch[1]) : 0,
         totalAgents: agentsMatch ? parseInt(agentsMatch[1]) : 1,
-        memoryFiles: memoryMatch ? parseInt(memoryMatch[1]) : 46,
-        memoryChunks: memoryMatch ? parseInt(memoryMatch[2]) : 225,
+        memoryFiles: memoryMatch ? parseInt(memoryMatch[1]) : 0,
+        memoryChunks: memoryMatch ? parseInt(memoryMatch[2]) : 0,
         heartbeatInterval: heartbeatInterval ? heartbeatInterval[1] : '1h',
         channels: channels || []
       },
@@ -1655,31 +1655,6 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
-app.post('/api/model', async (req, res) => {
-  try {
-    const { model } = req.body;
-
-    // Call OpenClaw gateway to update model
-    const response = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/config/model`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GATEWAY_TOKEN}`
-      },
-      body: JSON.stringify({ model })
-    });
-
-    if (response.ok) {
-      res.json({ success: true });
-    } else {
-      res.status(500).json({ error: 'Failed to switch model' });
-    }
-  } catch (error) {
-    console.error('Model switch error:', error);
-    res.status(500).json({ error: 'Failed to switch model' });
-  }
-});
-
 // Skills API endpoints
 app.get('/api/skills', async (req, res) => {
   try {
@@ -1813,7 +1788,7 @@ app.post('/api/skills/:name/install', async (req, res) => {
   // Simplified install - just add to config
   try {
     const { name } = req.params;
-    res.json({ success: true, message: 'Skill installation not implemented' });
+    res.status(501).json({ error: 'Skill installation not yet implemented — manage skills via openclaw CLI' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to install skill' });
   }
@@ -1823,7 +1798,7 @@ app.post('/api/skills/:name/uninstall', async (req, res) => {
   // Simplified uninstall - just remove from config
   try {
     const { name } = req.params;
-    res.json({ success: true, message: 'Skill uninstall not implemented' });
+    res.status(501).json({ error: 'Skill uninstall not yet implemented — manage skills via openclaw CLI' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to uninstall skill' });
   }
@@ -1895,12 +1870,30 @@ app.get('/api/aws/bedrock-models', async (req, res) => {
 });
 
 app.get('/api/models', async (req, res) => {
-  // List available models from Bedrock
-  res.json([
-    { id: 'us.anthropic.claude-opus-4-6-v1', name: 'Claude Opus 4.6' },
-    { id: 'us.anthropic.claude-sonnet-4-20250514-v1:0', name: 'Claude Sonnet 4' },
-    { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', name: 'Claude Haiku 4.5' }
-  ]);
+  // List available models from OpenClaw config
+  try {
+    const configPath = path.join(require('os').homedir(), '.openclaw/openclaw.json');
+    const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
+    const modelConfig = config.agents?.defaults?.model || {};
+    const modelDefs = config.agents?.defaults?.models || {};
+
+    const models = [];
+    const formatModel = (id) => {
+      const alias = modelDefs[id]?.alias;
+      const short = id.replace(/^synthetic\/hf:/, '').replace(/^us\.anthropic\./, '');
+      return { id, name: alias || short };
+    };
+
+    if (modelConfig.primary) models.push(formatModel(modelConfig.primary));
+    for (const fb of (modelConfig.fallbacks || [])) {
+      models.push(formatModel(fb));
+    }
+
+    // If no models found in config, return empty
+    res.json(models.length > 0 ? models : [{ id: 'unknown', name: 'No models configured' }]);
+  } catch (e) {
+    res.status(500).json([{ id: 'error', name: 'Failed to read config' }]);
+  }
 });
 
 // Switch agent model via gateway config

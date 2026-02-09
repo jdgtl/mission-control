@@ -347,12 +347,12 @@ export default function Dashboard() {
         </div>
 
         {/* Main content: Activity Feed + System Info */}
-        <div style={{ display: 'flex', flexDirection: m ? 'column' : 'row', gap: m ? 16 : 24 }}>
-          
+        <div style={{ display: 'flex', flexDirection: m ? 'column' : 'row', gap: m ? 16 : 24, alignItems: m ? undefined : 'stretch' }}>
+
           {/* Activity Feed — THE main feature */}
-          <div style={{ flex: m ? undefined : 1.5, minWidth: 0 }}>
-            <GlassCard delay={0.15} hover={false} noPad>
-              <div style={{ padding: m ? 14 : 24, maxHeight: m ? 500 : 640, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: m ? undefined : 1.5, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <GlassCard delay={0.15} hover={false} noPad style={m ? {} : { flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: m ? 14 : 24, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, maxHeight: m ? 500 : undefined }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                   <h3 style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.92)', display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Bell size={14} style={{ color: '#FFD60A' }} /> Activity Feed

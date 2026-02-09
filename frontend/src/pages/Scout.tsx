@@ -57,7 +57,7 @@ const FILTERS = [
 
 export default function Scout() {
   const m = useIsMobile()
-  const { data, loading } = useApi<any>('/api/scout', 60000)
+  const { data, loading, refetch: refetchScout } = useApi<any>('/api/scout', 60000)
   const { data: cronData } = useApi<any>('/api/cron', 30000) // Add cron data for next scan time
   const [sortBy, setSortBy] = useState<'score' | 'date'>('score')
   const [filter, setFilter] = useState('all')
@@ -89,14 +89,14 @@ export default function Scout() {
   const handleDeploy = async (oppId: string) => {
     try {
       await fetch('/api/scout/deploy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ opportunityId: oppId }) })
-      window.location.reload()
+      refetchScout()
     } catch {}
   }
 
   const handleDismiss = async (oppId: string) => {
     try {
       await fetch('/api/scout/dismiss', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ opportunityId: oppId }) })
-      window.location.reload()
+      refetchScout()
     } catch {}
   }
 
@@ -118,7 +118,7 @@ export default function Scout() {
               setScanning(false)
               setToast('✅ Scan completed! Results refreshed.')
               setTimeout(() => setToast(null), 4000)
-              window.location.reload() // Reload to show new results
+              refetchScout()
             } else {
               setTimeout(checkStatus, 3000) // Check again in 3 seconds
             }
