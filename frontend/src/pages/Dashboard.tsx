@@ -347,11 +347,11 @@ export default function Dashboard() {
         </div>
 
         {/* Main content: Activity Feed + System Info */}
-        <div style={{ display: 'flex', flexDirection: m ? 'column' : 'row', gap: m ? 16 : 24, alignItems: m ? undefined : 'stretch' }}>
+        <div style={{ display: 'flex', flexDirection: m ? 'column' : 'row', gap: m ? 16 : 24, height: m ? undefined : 520 }}>
 
           {/* Activity Feed — THE main feature */}
-          <div style={{ flex: m ? undefined : 1.5, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            <GlassCard delay={0.15} hover={false} noPad style={m ? {} : { flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: m ? undefined : 1.5, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <GlassCard delay={0.15} hover={false} noPad style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               <div style={{ padding: m ? 14 : 24, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, maxHeight: m ? 500 : undefined }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                   <h3 style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.92)', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -475,7 +475,7 @@ export default function Dashboard() {
           </div>
 
           {/* Right Column - System Info */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: m ? 12 : 20, minWidth: 0 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: m ? 12 : 20, minWidth: 0, minHeight: 0, overflowY: m ? undefined : 'auto' }}>
             {/* Channels */}
             <GlassCard delay={0.2} hover={false} noPad>
               <div style={{ padding: m ? 14 : 24 }}>

@@ -795,12 +795,15 @@ app.get('/api/activity', async (req, res) => {
       }
     } catch(e) {}
     
-    // 4. Gateway session activity
+    // 4. Gateway session activity (only sessions with real message content)
     try {
       const sessions = await fetchSessions(20);
       const sessionList = sessions.sessions || [];
       for (const s of sessionList.slice(0, 15)) {
         const lastMsg = s.lastMessage || s.preview || '';
+        // Skip sessions with no actual message content — updatedAt can be misleading
+        // (gateway touches sessions internally for heartbeats, etc.)
+        if (!lastMsg) continue;
         const key = s.key || s.id || '';
         let channel = s.channel || 'system';
         if (key.includes('slack')) channel = 'slack';
@@ -815,7 +818,7 @@ app.get('/api/activity', async (req, res) => {
             type: 'session',
             icon: channel === 'slack' ? 'message-circle' : channel === 'mission-control' ? 'monitor' : 'zap',
             title: `${channelLabel} conversation`,
-            detail: lastMsg ? lastMsg.substring(0, 150) : `Session with ${s.totalTokens || 0} tokens`,
+            detail: lastMsg.substring(0, 150),
             time: timeISO,
             actionable: false,
           });
