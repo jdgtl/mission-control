@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Cloud, Play, CheckCircle, AlertCircle, ChevronDown, ChevronUp, X, MessageSquare, Image, Music, Video, Box, Brain, Mic, Languages, Search } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
+import { AWSSkeleton } from '../components/SkeletonLoader'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import { useApi } from '../lib/hooks'
@@ -91,13 +92,7 @@ export default function AWS() {
   const [testResults, setTestResults] = useState<Record<string, string>>({})
 
   if (awsLoading) {
-    return (
-      <PageTransition>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 256 }}>
-          <div style={{ width: 32, height: 32, border: '2px solid #007AFF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-        </div>
-      </PageTransition>
-    )
+    return <AWSSkeleton isMobile={isMobile} />
   }
 
   const account = awsData?.account || { id: '...', region: '...' }

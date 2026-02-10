@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Settings2, Save, RefreshCw, Shield, Database, Globe, Download, Upload, Clock, Zap, ArrowUpCircle, Loader2, Heart, FileText, Edit3, Eye, Lock } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
+import { SettingsSkeleton } from '../components/SkeletonLoader'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
@@ -9,7 +10,11 @@ import { apiFetch } from '../lib/api'
 
 export default function Settings() {
   const isMobile = useIsMobile()
-  const { data: configData } = useApi<any>('/api/settings')
+  const { data: configData, loading } = useApi<any>('/api/settings')
+
+  if (loading && !configData) {
+    return <SettingsSkeleton isMobile={isMobile} />
+  }
 
   return (
     <PageTransition>

@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Clock, Zap, CheckCircle, Play, X, AlertCircle, Loader2, ArrowLeft, MessageSquare, ExternalLink } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
+import { WorkshopSkeleton } from '../components/SkeletonLoader'
 import { useApi, timeAgo } from '../lib/hooks'
 import { useIsMobile } from '../lib/useIsMobile'
 import { apiFetch } from '../lib/api'
@@ -70,13 +71,7 @@ export default function Workshop() {
   }, [data, searchParams])
 
   if (loading || !data) {
-    return (
-      <PageTransition>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 256 }}>
-          <div style={{ width: 24, height: 24, border: '2px solid #007AFF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-        </div>
-      </PageTransition>
-    )
+    return <WorkshopSkeleton isMobile={m} />
   }
 
   const columns = data.columns

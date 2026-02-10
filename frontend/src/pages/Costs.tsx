@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { DollarSign, TrendingUp, TrendingDown, Target, Calendar, Zap, Settings, AlertCircle } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
+import { CostsSkeleton } from '../components/SkeletonLoader'
 import GlassCard from '../components/GlassCard'
 import AnimatedCounter from '../components/AnimatedCounter'
 import { useIsMobile } from '../lib/useIsMobile'
@@ -126,19 +127,7 @@ export default function Costs() {
   }
 
   if (loading) {
-    return (
-      <PageTransition>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '400px' }}>
-          <div style={{ 
-            width: '32px', height: '32px', 
-            border: '2px solid #007AFF', 
-            borderTopColor: 'transparent', 
-            borderRadius: '50%', 
-            animation: 'spin 1s linear infinite' 
-          }} />
-        </div>
-      </PageTransition>
-    )
+    return <CostsSkeleton isMobile={m} />
   }
 
   if (error || (!awsCosts && !tokenData)) {

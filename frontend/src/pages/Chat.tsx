@@ -5,6 +5,7 @@ import {
   ArrowLeft, Hash, MessageSquare, Zap, Clock, Search
 } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
+import { ChatSkeleton } from '../components/SkeletonLoader'
 import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
 import { useApi, timeAgo } from '../lib/hooks'
@@ -438,6 +439,10 @@ export default function Chat() {
   }
 
   // Sessions list view (default)
+  if (!sessionsData) {
+    return <ChatSkeleton isMobile={m} />
+  }
+
   const allSessions = (sessionsData?.sessions || sessionsData || []);
   const filters = [
     { id: 'active', label: 'Active', count: allSessions.filter((s: any) => s.isActive).length },

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Radar, SortDesc, X, Rocket, Shield, Code, Briefcase, GraduationCap, DollarSign, Search } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
+import { ScoutSkeleton } from '../components/SkeletonLoader'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import { useApi, timeAgo } from '../lib/hooks'
@@ -66,13 +67,7 @@ export default function Scout() {
   const [toast, setToast] = useState<string | null>(null)
 
   if (loading || !data) {
-    return (
-      <PageTransition>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 256 }}>
-          <div style={{ width: 32, height: 32, border: '2px solid #007AFF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-        </div>
-      </PageTransition>
-    )
+    return <ScoutSkeleton isMobile={m} />
   }
 
   const activeFilter = FILTERS.find(f => f.id === filter)

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Clock, Play, Pause, AlertTriangle, CheckCircle, XCircle, Plus, Trash2, RotateCcw } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import PageTransition from '../components/PageTransition'
+import { CronSkeleton } from '../components/SkeletonLoader'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
@@ -584,13 +585,7 @@ export default function Cron() {
   }
 
   if (loading || !data) {
-    return (
-      <PageTransition>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 256 }}>
-          <div style={{ width: 32, height: 32, border: '2px solid #007AFF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-        </div>
-      </PageTransition>
-    )
+    return <CronSkeleton isMobile={m} />
   }
 
   const { jobs } = data

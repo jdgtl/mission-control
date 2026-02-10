@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Users, Shield, Copy, Check, UserX, UserCheck, Heart, Plus, RefreshCw } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
+import { AdminSkeleton } from '../components/SkeletonLoader'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
@@ -98,6 +99,10 @@ export default function Admin() {
   const activeUsers = users.filter(u => !u.disabled)
   const adminCount = users.filter(u => u.role === 'admin').length
   const healthyGateways = gateways.filter(g => g.healthy).length
+
+  if (!usersData) {
+    return <AdminSkeleton isMobile={isMobile} />
+  }
 
   return (
     <PageTransition>

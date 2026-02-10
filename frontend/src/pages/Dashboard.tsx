@@ -6,6 +6,7 @@ import {
   Clock, Loader2, Play, ArrowRight, Bell, ArrowUpCircle,
 } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
+import { DashboardSkeleton } from '../components/SkeletonLoader'
 import GlassCard from '../components/GlassCard'
 import AnimatedCounter from '../components/AnimatedCounter'
 import StatusBadge from '../components/StatusBadge'
@@ -218,13 +219,7 @@ export default function Dashboard() {
   }
 
   if (loading || !data) {
-    return (
-      <PageTransition>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh' }}>
-          <div style={{ width: 24, height: 24, border: '2px solid #007AFF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-        </div>
-      </PageTransition>
-    )
+    return <DashboardSkeleton isMobile={m} />
   }
 
   const { agent, heartbeat, tokenUsage } = data
