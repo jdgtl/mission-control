@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Clock, Zap, CheckCircle, Play, X, AlertCircle, Loader2, ArrowLeft, MessageSquare, ExternalLink } from 'lucide-react'
@@ -256,6 +257,7 @@ export default function Workshop() {
 
   // === KANBAN VIEW ===
   return (
+    <>
     <PageTransition>
       <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: m ? 14 : 24 }}>
         {/* Header */}
@@ -435,99 +437,104 @@ export default function Workshop() {
         </div>
       </div>
 
-      {/* Add Task Modal */}
-      <AnimatePresence>
-        {showAddModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-            onClick={() => setShowAddModal(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              style={{ background: 'rgba(28,28,30,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: m ? 12 : 16, padding: m ? 20 : 28, width: '100%', maxWidth: m ? '95vw' : 480 }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: 'rgba(255,255,255,0.92)' }}>Add Task</h2>
-                <button onClick={() => setShowAddModal(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                  <X size={16} style={{ color: 'rgba(255,255,255,0.6)' }} />
-                </button>
-              </div>
+    </PageTransition>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', marginBottom: 6 }}>Title *</label>
-                  <input
-                    value={addForm.title}
-                    onChange={(e) => setAddForm(prev => ({ ...prev, title: e.target.value }))}
-                    placeholder="e.g. Research competitors, Write blog post..."
-                    autoFocus
-                    style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 13, color: 'rgba(255,255,255,0.92)', outline: 'none', boxSizing: 'border-box' }}
-                  />
+      {/* Add Task Modal — portaled to body to avoid PageTransition transform breaking position:fixed */}
+      {createPortal(
+        <AnimatePresence>
+          {showAddModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+              onClick={() => setShowAddModal(false)}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                onClick={(e) => e.stopPropagation()}
+                style={{ background: 'rgba(28,28,30,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: m ? 12 : 16, padding: m ? 20 : 28, width: '100%', maxWidth: m ? '95vw' : 480 }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 700, color: 'rgba(255,255,255,0.92)' }}>Add Task</h2>
+                  <button onClick={() => setShowAddModal(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                    <X size={16} style={{ color: 'rgba(255,255,255,0.6)' }} />
+                  </button>
                 </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', marginBottom: 6 }}>Description</label>
-                  <textarea
-                    value={addForm.description}
-                    onChange={(e) => setAddForm(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="What should be done? Any specific instructions..."
-                    rows={3}
-                    style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 13, color: 'rgba(255,255,255,0.92)', outline: 'none', resize: 'vertical', minHeight: 70, boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', marginBottom: 6 }}>Priority</label>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {(['low', 'medium', 'high'] as const).map(p => (
-                      <button
-                        key={p}
-                        onClick={() => setAddForm(prev => ({ ...prev, priority: p }))}
-                        style={{
-                          flex: 1, padding: '8px 0', borderRadius: 8, cursor: 'pointer',
-                          border: addForm.priority === p ? `1px solid ${priorityConfig[p].color}40` : '1px solid rgba(255,255,255,0.08)',
-                          background: addForm.priority === p ? `${priorityConfig[p].color}15` : 'rgba(255,255,255,0.04)',
-                          color: addForm.priority === p ? priorityConfig[p].color : 'rgba(255,255,255,0.5)',
-                          fontSize: 12, fontWeight: 500, textTransform: 'capitalize',
-                        }}
-                      >
-                        {p}
-                      </button>
-                    ))}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', marginBottom: 6 }}>Title *</label>
+                    <input
+                      value={addForm.title}
+                      onChange={(e) => setAddForm(prev => ({ ...prev, title: e.target.value }))}
+                      placeholder="e.g. Research competitors, Write blog post..."
+                      autoFocus
+                      style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 13, color: 'rgba(255,255,255,0.92)', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', marginBottom: 6 }}>Description</label>
+                    <textarea
+                      value={addForm.description}
+                      onChange={(e) => setAddForm(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="What should be done? Any specific instructions..."
+                      rows={3}
+                      style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 13, color: 'rgba(255,255,255,0.92)', outline: 'none', resize: 'vertical', minHeight: 70, boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', marginBottom: 6 }}>Priority</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {(['low', 'medium', 'high'] as const).map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setAddForm(prev => ({ ...prev, priority: p }))}
+                          style={{
+                            flex: 1, padding: '8px 0', borderRadius: 8, cursor: 'pointer',
+                            border: addForm.priority === p ? `1px solid ${priorityConfig[p].color}40` : '1px solid rgba(255,255,255,0.08)',
+                            background: addForm.priority === p ? `${priorityConfig[p].color}15` : 'rgba(255,255,255,0.04)',
+                            color: addForm.priority === p ? priorityConfig[p].color : 'rgba(255,255,255,0.5)',
+                            fontSize: 12, fontWeight: 500, textTransform: 'capitalize',
+                          }}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', marginBottom: 6 }}>Tags (comma separated)</label>
+                    <input
+                      value={addForm.tags}
+                      onChange={(e) => setAddForm(prev => ({ ...prev, tags: e.target.value }))}
+                      placeholder="research, email, dev..."
+                      style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 13, color: 'rgba(255,255,255,0.92)', outline: 'none', boxSizing: 'border-box' }}
+                    />
                   </div>
                 </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', marginBottom: 6 }}>Tags (comma separated)</label>
-                  <input
-                    value={addForm.tags}
-                    onChange={(e) => setAddForm(prev => ({ ...prev, tags: e.target.value }))}
-                    placeholder="research, email, dev..."
-                    style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 13, color: 'rgba(255,255,255,0.92)', outline: 'none', boxSizing: 'border-box' }}
-                  />
-                </div>
-              </div>
 
-              <button
-                onClick={handleAddTask}
-                disabled={!addForm.title.trim()}
-                style={{
-                  width: '100%', marginTop: 20, padding: '12px', borderRadius: 10,
-                  border: 'none', cursor: addForm.title.trim() ? 'pointer' : 'not-allowed',
-                  background: addForm.title.trim() ? '#007AFF' : 'rgba(255,255,255,0.08)',
-                  color: '#fff', fontSize: 14, fontWeight: 600,
-                  opacity: addForm.title.trim() ? 1 : 0.5,
-                }}
-              >
-                Add to Queue
-              </button>
+                <button
+                  onClick={handleAddTask}
+                  disabled={!addForm.title.trim()}
+                  style={{
+                    width: '100%', marginTop: 20, padding: '12px', borderRadius: 10,
+                    border: 'none', cursor: addForm.title.trim() ? 'pointer' : 'not-allowed',
+                    background: addForm.title.trim() ? '#007AFF' : 'rgba(255,255,255,0.08)',
+                    color: '#fff', fontSize: 14, fontWeight: 600,
+                    opacity: addForm.title.trim() ? 1 : 0.5,
+                  }}
+                >
+                  Add to Queue
+                </button>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </PageTransition>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+    </>
   )
 }
