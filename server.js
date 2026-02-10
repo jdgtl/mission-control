@@ -218,7 +218,7 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const valid = await verifyPassword(currentPassword, user.passwordHash);
-    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+    if (!valid) return res.status(400).json({ error: 'Current password is incorrect' });
 
     user.passwordHash = await hashPassword(newPassword);
     saveUsers(store);
