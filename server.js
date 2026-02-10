@@ -1765,93 +1765,265 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
-// Skills API endpoints
+// ── Skills helpers ─────────────────────────────────────────────────────────
+
+const SYSTEM_SKILLS_PATH = path.join(process.env.HOME || '/home/openclaw', '.npm-global/lib/node_modules/openclaw/skills');
+
+const SKILL_CATEGORIES = {
+  'Communication': ['discord', 'slack', 'imsg', 'wacli', 'bluebubbles', 'himalaya', 'voice-call'],
+  'AI & Models': ['gemini', 'openai-image-gen', 'openai-whisper', 'openai-whisper-api', 'oracle', 'coding-agent', 'nano-banana-pro', 'sag', 'sherpa-onnx-tts', 'summarize'],
+  'Productivity': ['notion', 'trello', 'obsidian', 'apple-notes', 'apple-reminders', 'bear-notes', 'things-mac', '1password', 'gog', 'nano-pdf'],
+  'Media': ['spotify-player', 'sonoscli', 'songsee', 'gifgrep', 'video-frames', 'camsnap', 'peekaboo', 'openai-whisper', 'canvas'],
+  'Developer': ['github', 'tmux', 'coding-agent', 'clawhub', 'skill-creator', 'mcporter', 'session-logs', 'model-usage', 'blogwatcher'],
+  'Smart Home': ['openhue', 'eightctl', 'blucli', 'sonoscli'],
+  'Local & Maps': ['local-places', 'goplaces', 'food-order', 'weather'],
+  'Web & Research': ['blogwatcher', 'summarize', 'oracle'],
+  'System': ['healthcheck', 'tmux', 'session-logs', 'model-usage'],
+};
+
+/** Parse YAML frontmatter from SKILL.md — extracts openclaw metadata via brace-counting */
+function parseSkillMetadata(skillDir) {
+  const mdPath = path.join(skillDir, 'SKILL.md');
+  if (!fs.existsSync(mdPath)) return null;
+  try {
+    const raw = fs.readFileSync(mdPath, 'utf8');
+    // Extract YAML frontmatter between ---
+    const match = raw.match(/^---\n([\s\S]*?)\n---/);
+    if (!match) return null;
+    const fm = match[1];
+
+    // Parse simple fields from frontmatter
+    const result = {};
+    const nameMatch = fm.match(/^name:\s*(.+)$/m);
+    if (nameMatch) result.name = nameMatch[1].trim().replace(/^["']|["']$/g, '');
+    const descMatch = fm.match(/^description:\s*(.+)$/m);
+    if (descMatch) result.description = descMatch[1].trim().replace(/^["']|["']$/g, '');
+    const homeMatch = fm.match(/^homepage:\s*(.+)$/m);
+    if (homeMatch) result.homepage = homeMatch[1].trim();
+
+    // Extract JSON from metadata field using brace-counting
+    const metaIdx = fm.indexOf('metadata:');
+    if (metaIdx !== -1) {
+      const afterMeta = fm.substring(metaIdx + 'metadata:'.length);
+      const braceStart = afterMeta.indexOf('{');
+      if (braceStart !== -1) {
+        let depth = 0;
+        let end = -1;
+        for (let i = braceStart; i < afterMeta.length; i++) {
+          if (afterMeta[i] === '{') depth++;
+          else if (afterMeta[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end !== -1) {
+          const jsonStr = afterMeta.substring(braceStart, end + 1)
+            .replace(/,\s*([\]}])/g, '$1'); // strip trailing commas
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const oc = parsed.openclaw || parsed;
+            result.emoji = oc.emoji;
+            result.requires = oc.requires;
+            result.primaryEnv = oc.primaryEnv;
+            result.install = oc.install;
+            result.os = oc.os;
+          } catch {}
+        }
+      }
+    }
+    return result;
+  } catch { return null; }
+}
+
+/** Check if a binary is available on PATH */
+function checkBinaryAvailable(bin) {
+  try { execSync(`which ${bin} 2>/dev/null`, { stdio: 'pipe' }); return true; } catch { return false; }
+}
+
+/** Check all dependencies for a skill given its metadata and user config */
+function checkSkillDependencies(meta, userConfig) {
+  const result = { bins: {}, env: {}, config: {}, ready: true };
+  if (!meta || !meta.requires) return result;
+  const req = meta.requires;
+
+  // Check required binaries
+  if (req.bins) {
+    for (const bin of req.bins) {
+      const ok = checkBinaryAvailable(bin);
+      result.bins[bin] = ok;
+      if (!ok) result.ready = false;
+    }
+  }
+  // Check anyBins — at least one must exist
+  if (req.anyBins) {
+    let anyFound = false;
+    for (const bin of req.anyBins) {
+      const ok = checkBinaryAvailable(bin);
+      result.bins[bin] = ok;
+      if (ok) anyFound = true;
+    }
+    if (!anyFound) result.ready = false;
+  }
+
+  // Check env vars — set if user's apiKey is configured OR env var exists
+  if (req.env) {
+    const skillEntries = userConfig?.skills?.entries || {};
+    for (const envName of req.env) {
+      // Check if any installed skill has an apiKey matching this env var as primaryEnv
+      let hasKey = false;
+      for (const [, entry] of Object.entries(skillEntries)) {
+        if (entry.apiKey) { hasKey = true; break; }
+      }
+      // Also check process.env
+      const ok = hasKey || !!process.env[envName];
+      result.env[envName] = ok;
+      if (!ok) result.ready = false;
+    }
+  }
+
+  // Check config paths
+  if (req.config) {
+    for (const cfgPath of req.config) {
+      const parts = cfgPath.split('.');
+      let val = userConfig;
+      let found = true;
+      for (const part of parts) {
+        if (val && typeof val === 'object' && part in val) { val = val[part]; } else { found = false; break; }
+      }
+      result.config[cfgPath] = found;
+      if (!found) result.ready = false;
+    }
+  }
+
+  return result;
+}
+
+/** Resolve skill path on disk — check workspace then system */
+function resolveSkillPath(skillName) {
+  const workspace = path.join(SKILLS_PATH, skillName);
+  if (fs.existsSync(workspace)) {
+    const isSystem = path.resolve(SKILLS_PATH) === path.resolve(SYSTEM_SKILLS_PATH) || workspace.includes('.npm-global') || workspace.includes('/usr/lib');
+    return { path: workspace, type: isSystem ? 'system' : 'workspace' };
+  }
+  const system = path.join(SYSTEM_SKILLS_PATH, skillName);
+  if (fs.existsSync(system)) return { path: system, type: 'system' };
+  return null;
+}
+
+// ── Skills API endpoints ──────────────────────────────────────────────────
+
 app.get('/api/skills', async (req, res) => {
   try {
     const installed = [];
     const available = [];
-
-    // Read OpenClaw config for installed skills
     const config = req.ctx.readOpenclawConfig();
+    const knownNames = new Set();
 
-    // Get installed skills from config
+    // Collect installed skills from user's config
     if (config.skills && config.skills.entries) {
       for (const [name, skillConfig] of Object.entries(config.skills.entries)) {
+        knownNames.add(name);
+        // Resolve path on disk for metadata
+        let diskPath = skillConfig.path;
+        let type = 'custom';
+        if (!diskPath || !fs.existsSync(diskPath)) {
+          const resolved = resolveSkillPath(name);
+          if (resolved) { diskPath = resolved.path; type = resolved.type; }
+        } else {
+          type = diskPath.includes('.npm-global') || diskPath.includes('/usr/lib') ? 'system' : 'workspace';
+        }
+
+        const meta = diskPath ? parseSkillMetadata(diskPath) : null;
+        const deps = checkSkillDependencies(meta, config);
+        // For env deps, also check if this specific skill has apiKey set
+        if (meta?.requires?.env && skillConfig.apiKey) {
+          for (const envName of meta.requires.env) {
+            deps.env[envName] = true;
+          }
+          // Recompute ready
+          deps.ready = Object.values(deps.bins).every(v => v) &&
+                       Object.values(deps.env).every(v => v) &&
+                       Object.values(deps.config).every(v => v);
+        }
+
         installed.push({
           name,
-          description: skillConfig.description || 'No description',
+          description: (meta && meta.description) || skillConfig.description || 'No description',
           status: skillConfig.enabled !== false ? 'active' : 'inactive',
           installed: true,
-          path: skillConfig.path,
-          type: skillConfig.path?.includes('/usr/lib') ? 'system' : 'workspace'
+          path: diskPath || skillConfig.path,
+          type,
+          emoji: meta?.emoji,
+          requires: meta?.requires,
+          primaryEnv: meta?.primaryEnv,
+          install: meta?.install,
+          os: meta?.os,
+          deps,
+          hasApiKey: !!skillConfig.apiKey,
+          homepage: meta?.homepage,
         });
       }
     }
 
     // Scan workspace skills directory
-    const workspaceSkillsPath = SKILLS_PATH;
-    if (fs.existsSync(workspaceSkillsPath)) {
-      const dirs = fs.readdirSync(workspaceSkillsPath, { withFileTypes: true })
-        .filter(dirent => dirent.isDirectory())
-        .map(dirent => dirent.name);
-
-      for (const dir of dirs) {
-        const skillPath = path.join(workspaceSkillsPath, dir);
-        const isInstalled = installed.some(s => s.name === dir);
-
-        if (!isInstalled) {
-          // Check for package.json or skill.json
-          let skillInfo = { name: dir, description: 'Workspace skill' };
-          const packagePath = path.join(skillPath, 'package.json');
-          const skillJsonPath = path.join(skillPath, 'skill.json');
-
-          if (fs.existsSync(packagePath)) {
-            const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-            skillInfo.description = pkg.description || skillInfo.description;
-            skillInfo.version = pkg.version;
-            skillInfo.author = pkg.author;
-          } else if (fs.existsSync(skillJsonPath)) {
-            const skill = JSON.parse(fs.readFileSync(skillJsonPath, 'utf8'));
-            skillInfo.description = skill.description || skillInfo.description;
-            skillInfo.version = skill.version;
-          }
-
+    const workspaceIsSystem = path.resolve(SKILLS_PATH) === path.resolve(SYSTEM_SKILLS_PATH);
+    if (fs.existsSync(SKILLS_PATH)) {
+      try {
+        const dirs = fs.readdirSync(SKILLS_PATH, { withFileTypes: true })
+          .filter(d => d.isDirectory()).map(d => d.name);
+        for (const dir of dirs) {
+          if (knownNames.has(dir)) continue;
+          knownNames.add(dir);
+          const skillPath = path.join(SKILLS_PATH, dir);
+          const meta = parseSkillMetadata(skillPath);
+          const deps = checkSkillDependencies(meta, config);
           available.push({
-            ...skillInfo,
+            name: (meta && meta.name) || dir,
+            description: (meta && meta.description) || (workspaceIsSystem ? 'System skill' : 'Workspace skill'),
             status: 'available',
             installed: false,
             path: skillPath,
-            type: 'workspace'
+            type: workspaceIsSystem ? 'system' : 'workspace',
+            emoji: meta?.emoji,
+            requires: meta?.requires,
+            primaryEnv: meta?.primaryEnv,
+            install: meta?.install,
+            os: meta?.os,
+            deps,
+            homepage: meta?.homepage,
           });
         }
-      }
+      } catch {}
     }
 
-    // Scan system skills directory
-    const systemSkillsPath = '/usr/lib/node_modules/openclaw/skills';
-    if (fs.existsSync(systemSkillsPath)) {
-      const dirs = fs.readdirSync(systemSkillsPath, { withFileTypes: true })
-        .filter(dirent => dirent.isDirectory())
-        .map(dirent => dirent.name);
-
-      for (const dir of dirs) {
-        const skillPath = path.join(systemSkillsPath, dir);
-        const isInstalled = installed.some(s => s.name === dir);
-
-        if (!isInstalled) {
+    // Scan system skills directory (fixed path)
+    if (fs.existsSync(SYSTEM_SKILLS_PATH)) {
+      try {
+        const dirs = fs.readdirSync(SYSTEM_SKILLS_PATH, { withFileTypes: true })
+          .filter(d => d.isDirectory()).map(d => d.name);
+        for (const dir of dirs) {
+          if (knownNames.has(dir)) continue;
+          knownNames.add(dir);
+          const skillPath = path.join(SYSTEM_SKILLS_PATH, dir);
+          const meta = parseSkillMetadata(skillPath);
+          const deps = checkSkillDependencies(meta, config);
           available.push({
-            name: dir,
-            description: 'System skill',
+            name: (meta && meta.name) || dir,
+            description: (meta && meta.description) || 'System skill',
             status: 'available',
             installed: false,
             path: skillPath,
-            type: 'system'
+            type: 'system',
+            emoji: meta?.emoji,
+            requires: meta?.requires,
+            primaryEnv: meta?.primaryEnv,
+            install: meta?.install,
+            os: meta?.os,
+            deps,
+            homepage: meta?.homepage,
           });
         }
-      }
+      } catch {}
     }
 
-    res.json({ installed, available });
+    res.json({ installed, available, categories: SKILL_CATEGORIES });
   } catch (error) {
     console.error('Skills error:', error);
     res.status(500).json({ error: 'Failed to load skills' });
@@ -1861,17 +2033,13 @@ app.get('/api/skills', async (req, res) => {
 app.post('/api/skills/:name/toggle', async (req, res) => {
   try {
     const { name } = req.params;
-
     const config = req.ctx.readOpenclawConfig();
     if (!config.skills) config.skills = { entries: {} };
 
     if (config.skills?.entries?.[name]) {
       config.skills.entries[name].enabled = !config.skills.entries[name].enabled;
       req.ctx.writeOpenclawConfig(config);
-
-      // Notify gateway about config change
-      await req.ctx.gatewayFetch('/config/reload', { method: 'POST' });
-
+      try { await req.ctx.gatewayFetch('/config/reload', { method: 'POST' }); } catch {}
       res.json({ success: true });
     } else {
       res.status(404).json({ error: 'Skill not found' });
@@ -1883,22 +2051,57 @@ app.post('/api/skills/:name/toggle', async (req, res) => {
 });
 
 app.post('/api/skills/:name/install', async (req, res) => {
-  // Simplified install - just add to config
   try {
     const { name } = req.params;
-    res.status(501).json({ error: 'Skill installation not yet implemented — manage skills via openclaw CLI' });
+    const { apiKey } = req.body || {};
+    const resolved = resolveSkillPath(name);
+    if (!resolved) return res.status(404).json({ error: `Skill "${name}" not found on disk` });
+
+    const config = req.ctx.readOpenclawConfig();
+    if (!config.skills) config.skills = { entries: {} };
+    config.skills.entries[name] = { enabled: true, path: resolved.path };
+    if (apiKey) config.skills.entries[name].apiKey = apiKey;
+    req.ctx.writeOpenclawConfig(config);
+    try { await req.ctx.gatewayFetch('/config/reload', { method: 'POST' }); } catch {}
+    res.json({ success: true });
   } catch (error) {
+    console.error('Skill install error:', error);
     res.status(500).json({ error: 'Failed to install skill' });
   }
 });
 
 app.post('/api/skills/:name/uninstall', async (req, res) => {
-  // Simplified uninstall - just remove from config
   try {
     const { name } = req.params;
-    res.status(501).json({ error: 'Skill uninstall not yet implemented — manage skills via openclaw CLI' });
+    const config = req.ctx.readOpenclawConfig();
+    if (!config.skills?.entries?.[name]) return res.status(404).json({ error: 'Skill not found' });
+    delete config.skills.entries[name];
+    req.ctx.writeOpenclawConfig(config);
+    try { await req.ctx.gatewayFetch('/config/reload', { method: 'POST' }); } catch {}
+    res.json({ success: true });
   } catch (error) {
+    console.error('Skill uninstall error:', error);
     res.status(500).json({ error: 'Failed to uninstall skill' });
+  }
+});
+
+app.post('/api/skills/:name/configure', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { apiKey } = req.body || {};
+    const config = req.ctx.readOpenclawConfig();
+    if (!config.skills?.entries?.[name]) return res.status(404).json({ error: 'Skill not installed' });
+    if (apiKey) {
+      config.skills.entries[name].apiKey = apiKey;
+    } else {
+      delete config.skills.entries[name].apiKey;
+    }
+    req.ctx.writeOpenclawConfig(config);
+    try { await req.ctx.gatewayFetch('/config/reload', { method: 'POST' }); } catch {}
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Skill configure error:', error);
+    res.status(500).json({ error: 'Failed to configure skill' });
   }
 });
 
