@@ -6,7 +6,7 @@ const { execSync, exec } = require('child_process');
 const multer = require('multer');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
-const { verifyToken, authenticateUser, createInviteCode, redeemInviteCode, createUser, loadUsers, saveUsers, getUserById, generateAccessToken } = require('./lib/auth');
+const { verifyToken, authenticateUser, createInviteCode, redeemInviteCode, createUser, loadUsers, saveUsers, getUserById, generateAccessToken, hashPassword, verifyPassword } = require('./lib/auth');
 const { UserContext } = require('./lib/user-context');
 
 // ========== CONFIG: Load mc-config.json (or create from defaults) ==========
@@ -214,7 +214,7 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
     if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
 
     const store = loadUsers();
-    const user = store.users[req.user.userId];
+    const user = store.users[req.user.id];
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const valid = await verifyPassword(currentPassword, user.passwordHash);
