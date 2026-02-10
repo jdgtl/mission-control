@@ -58,6 +58,7 @@ const S3_REGION = mcConfig.aws?.region || 'us-east-1';
 const app = express();
 const PORT = 3333;
 
+app.set('trust proxy', 1); // Behind Nginx reverse proxy
 app.use(express.json());
 app.use(cookieParser());
 
@@ -279,7 +280,7 @@ async function fetchSessions(limit = 50, ctx = null) {
     }
     return { count: 0, sessions: [] };
   } catch (e) {
-    console.error('[fetchSessions]', e.message);
+    console.error(`[fetchSessions] port=${ctx ? ctx.gatewayPort : GATEWAY_PORT} error=${e.message}`);
     return { count: 0, sessions: [] };
   }
 }
