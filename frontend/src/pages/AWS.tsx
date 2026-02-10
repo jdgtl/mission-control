@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Cloud, Play, CheckCircle, AlertCircle, ChevronDown, ChevronUp, X, MessageSquare, Image, Music, Video, Box, Brain, Mic, Languages, Search } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
@@ -67,6 +67,14 @@ function getModelAction(m: BedrockModel): { label: string; type: 'agent' | 'imag
 
 export default function AWS() {
   const isMobile = useIsMobile()
+  const [agentName, setAgentName] = useState('Agent')
+
+  useEffect(() => {
+    apiFetch('/api/config').then(r => r.json()).then(d => {
+      const name = (d.name || '').replace(/ Mission Control$/, '')
+      if (name) setAgentName(name)
+    }).catch(() => {})
+  }, [])
   const { data: awsData, loading: awsLoading } = useApi<AWSData>('/api/aws/services', 60000)
   const { data: modelsData, loading: modelsLoading } = useApi<BedrockModel[]>('/api/aws/bedrock-models', 120000)
   const { data: costData } = useApi<any>('/api/aws/costs', 60000)
@@ -488,7 +496,7 @@ export default function AWS() {
                     {action.type === 'agent' && (
                       <div>
                         <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 12 }}>
-                          Switch Ari's active model to this. Takes effect on next message.
+                          Switch {agentName}'s active model to this. Takes effect on next message.
                         </p>
                         <button
                           onClick={() => handleSetAgentModel(selectedModel.modelId)}

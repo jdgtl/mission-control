@@ -94,9 +94,17 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
+  const [agentName, setAgentName] = useState('Agent')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    apiFetch('/api/config').then(r => r.json()).then(d => {
+      const name = (d.name || '').replace(/ Mission Control$/, '')
+      if (name) setAgentName(name)
+    }).catch(() => {})
+  }, [])
   const [filter, setFilter] = useState<'active' | 'all'>('active')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -233,7 +241,7 @@ export default function Chat() {
 
   const openMainChat = () => {
     setActiveSession('main-chat')
-    setActiveSessionName('Ari')
+    setActiveSessionName(agentName)
     setMessages([])
     setHistoryMessages([])
   }
@@ -362,7 +370,7 @@ export default function Chat() {
             </button>
             <Sparkles size={18} style={{ color: '#007AFF' }} />
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 15, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>Chat with Ari</h2>
+              <h2 style={{ fontSize: 15, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>Chat with {agentName}</h2>
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>Full memory & tools</p>
             </div>
             {messages.length > 0 && (
@@ -379,7 +387,7 @@ export default function Chat() {
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, opacity: 0.4 }}>
                   <Bot size={40} />
                   <p style={{ fontSize: 14, fontWeight: 500 }}>Hey! Ask me anything 🤖</p>
-                  <p style={{ fontSize: 12 }}>Same brain as Discord — full memory, all tools.</p>
+                  <p style={{ fontSize: 12 }}>Full memory & all tools available.</p>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -391,7 +399,7 @@ export default function Chat() {
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>{msg.role === 'assistant' ? 'Ari' : 'You'}</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>{msg.role === 'assistant' ? agentName : 'You'}</span>
                             {msg.streaming && <Loader2 size={10} style={{ color: '#007AFF', animation: 'spin 1s linear infinite' }} />}
                           </div>
                           <div style={{ fontSize: 13, lineHeight: 1.6, color: 'rgba(255,255,255,0.82)', wordBreak: 'break-word' }} dangerouslySetInnerHTML={{ __html: renderContent(msg.content || '...') }} />
@@ -411,7 +419,7 @@ export default function Chat() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                  placeholder="Message Ari..."
+                  placeholder={`Message ${agentName}...`}
                   disabled={isStreaming}
                   rows={1}
                   autoFocus

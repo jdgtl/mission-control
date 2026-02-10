@@ -1,18 +1,18 @@
 # Multi-Tenant Mission Control Setup
 
-Internal documentation for the J/DGTL Mission Control deployment on `openclaw-jdgtl`.
+Internal documentation for the Sauce Command Center deployment on `openclaw-jdgtl`.
 
 ## Architecture
 
 ```
-mc.jdgtl.com (Nginx + HTTPS — pending DNS)
+https://mc.saucecreative.co (Nginx + HTTPS, Let's Encrypt auto-renew)
   |
-  v
+  v  (Nginx binds to public IP 174.138.93.111 to coexist with Tailscale Serve)
 Mission Control (port 3333, single Express app)
   |-- Login -> JWT -> UserContext on every request
   |-- /api/* routes -> requireAuth middleware -> per-user gateway routing
   |     |-- Jonathan (admin) -> gateway :18789 (~/.openclaw/)
-  |     |-- Aabo (user)      -> gateway :18790 (~/.openclaw-taabo/)
+  |     |-- Thomas Aabo (user) -> gateway :18790 (~/.openclaw-taabo/)
   |
   Shared: skills catalog, enhancements.md, frontend code, mc-config.json
   Per-user: sessions, memory, tasks, scout results, agents, documents
@@ -21,6 +21,7 @@ Mission Control (port 3333, single Express app)
 **Server**: 2 cores, 3.8GB RAM, 62GB disk (DigitalOcean)
 - Tailscale IP: 100.89.158.4
 - Public IP: 174.138.93.111
+- Public URL: https://mc.saucecreative.co
 
 ## Services (systemd user units)
 
@@ -28,7 +29,7 @@ Mission Control (port 3333, single Express app)
 |---------|------|------------|-------------|
 | `mission-control.service` | 3333 | N/A | Dashboard (Express + static frontend) |
 | `openclaw-gateway.service` | 18789 | `~/.openclaw/` | Jonathan's gateway |
-| `openclaw-gateway-taabo.service` | 18790 | `~/.openclaw-taabo/` | Aabo's gateway |
+| `openclaw-gateway-taabo.service` | 18790 | `~/.openclaw-taabo/` | Thomas Aabo's gateway |
 
 ### Common commands
 
@@ -48,16 +49,18 @@ journalctl --user -u openclaw-gateway-taabo -f
 
 - **JWT tokens**: 24h access tokens + 30d refresh tokens (httpOnly cookie)
 - **Passwords**: bcrypt, 12 rounds
+- **Cookies**: `secure: true`, `httpOnly: true`, `sameSite: 'lax'`
 - **Rate limiting**: 20 requests/min on `/api/auth/*` endpoints
 - **JWT secret**: auto-generated, stored in `data/.jwt-secret`
 - **Refresh tokens**: rejected by `requireAuth` if used as access tokens (`decoded.type` check)
 
 ### Auth flow
 
-1. User POSTs `/api/auth/login` with username + password
-2. Server returns access token (in body + `mc_token` httpOnly cookie) + refresh token (`mc_refresh` httpOnly cookie)
+1. User POSTs `/api/auth/login` with email + password (e.g. `jonathan@saucecreative.co`)
+2. Server returns access token (in body + `mc_token` httpOnly secure cookie) + refresh token (`mc_refresh` httpOnly secure cookie)
 3. Frontend stores access token in `localStorage` and sends it via `Authorization: Bearer` header on all API calls (via `apiFetch()` wrapper)
 4. On 401, frontend clears token and redirects to `/login`
+5. Users can change their password via Settings → Change Password (`POST /api/auth/change-password`)
 
 ### Admin-only endpoints
 
@@ -92,12 +95,23 @@ Shared across all users: `mc-config.json`, `enhancements.md`, skills catalog, up
 
 ## Users
 
-| Username | Role | Port | Config Dir | Created |
-|----------|------|------|------------|---------|
-| jonathan | admin | 18789 | `~/.openclaw/` | 2026-02-09 |
-| aabo | user | 18790 | `~/.openclaw-taabo/` | 2026-02-09 |
+| Email | Display Name | Role | Port | Config Dir | Agent Name |
+|-------|-------------|------|------|------------|------------|
+| jonathan@saucecreative.co | Jonathan Glass | admin | 18789 | `~/.openclaw/` | Ari |
+| thomas@saucecreative.co | Thomas Aabo | user | 18790 | `~/.openclaw-taabo/` | OpenClaw (Claw for short) |
 
-User data stored in `data/users.json` (gitignored).
+User data stored in `data/users.json` (gitignored). Agent names are read dynamically from each user's `IDENTITY.md` workspace file.
+
+## Per-User Dynamic Content
+
+All UI content is per-user — zero hardcoded agent names or model names:
+
+- **Agent name**: Read from `IDENTITY.md` (`**Name:** ...` field) in each user's workspace
+- **Model name**: Read from `agents.defaults.model.primary` in each user's `openclaw.json` via `UserContext.defaultModelName`
+- **Provider name**: Read from model ID prefix via `UserContext.defaultProviderName`
+- **Page title**: "Sauce Command Center" (shared branding)
+- **Sidebar subtitle**: Per-user agent name + "Mission Control" (e.g. "Ari Mission Control")
+- **Chat/Workshop/AWS pages**: All use `agentName` state fetched from `/api/config`
 
 ## Adding a New User
 
@@ -133,26 +147,29 @@ After registration, use the admin panel or manually update the user's gateway co
 - **Auth**: `AuthProvider` context + `ProtectedRoute` wrapper (supports `adminOnly` prop)
 - **API calls**: All go through `apiFetch()` from `lib/api.ts` (auto-attaches Bearer token, redirects to /login on 401)
 - **Sidebar**: Admin nav item only visible to `user.role === 'admin'`
+- **Dynamic content**: All pages fetch agent name from `/api/config` — no hardcoded names anywhere
 
-## Nginx (pending DNS)
+## Nginx + HTTPS
 
-Config file: `nginx/mc.jdgtl.com`
+Config file: `nginx/mc.saucecreative.co`
+Domain: `mc.saucecreative.co` → `174.138.93.111`
+SSL: Let's Encrypt, auto-renews (expires 2026-05-10)
 
 ```bash
-# Install
-sudo cp nginx/mc.jdgtl.com /etc/nginx/sites-available/
-sudo ln -s /etc/nginx/sites-available/mc.jdgtl.com /etc/nginx/sites-enabled/
+# If reinstalling
+sudo cp nginx/mc.saucecreative.co /etc/nginx/sites-available/
+sudo ln -s /etc/nginx/sites-available/mc.saucecreative.co /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-
-# After DNS propagates
-sudo certbot --nginx -d mc.jdgtl.com
+sudo certbot --nginx -d mc.saucecreative.co
 ```
 
-Features:
+Key details:
+- **Nginx binds to public IP only** (`174.138.93.111:443`) to coexist with Tailscale Serve on Tailscale IP
 - Rate limiting on `/api/auth/` (20/min, burst 5)
 - SSE support for `/api/chat` (proxy_buffering off, Connection header cleared, HTTP/1.1)
 - Security headers (X-Frame-Options, X-Content-Type-Options, XSS-Protection, Referrer-Policy)
 - 10MB max upload size
+- HTTP → HTTPS redirect (301)
 
 ## Key Technical Notes
 
@@ -169,10 +186,7 @@ Features:
 
 ### High Priority
 
-- [ ] **DNS setup**: Create A record `mc.jdgtl.com -> 174.138.93.111` (Jonathan to configure at registrar)
-- [ ] **HTTPS**: Run `sudo certbot --nginx -d mc.jdgtl.com` after DNS propagates
-- [ ] **Cookie hardening**: Set `secure: true` on `mc_token` and `mc_refresh` cookies after HTTPS is live (in `server.js` cookie options)
-- [ ] **Change default passwords**: Both jonathan and aabo accounts still use `changeme`
+- [ ] **Change default passwords**: Both users should change from `changeme` (Settings → Change Password)
 
 ### Medium Priority
 

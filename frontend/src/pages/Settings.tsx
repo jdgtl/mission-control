@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Settings2, Save, RefreshCw, Shield, Database, Globe, Download, Upload, Clock, Zap, ArrowUpCircle, Loader2, Heart, FileText, Edit3, Eye } from 'lucide-react'
+import { Settings2, Save, RefreshCw, Shield, Database, Globe, Download, Upload, Clock, Zap, ArrowUpCircle, Loader2, Heart, FileText, Edit3, Eye, Lock } from 'lucide-react'
 import PageTransition from '../components/PageTransition'
 import { useIsMobile } from '../lib/useIsMobile'
 import GlassCard from '../components/GlassCard'
@@ -56,6 +56,9 @@ export default function Settings() {
             </div>
           </GlassCard>
 
+          {/* Change Password Card */}
+          <ChangePasswordCard isMobile={isMobile} />
+
           {/* Heartbeat Status Card (read-only) */}
           <HeartbeatStatusCard isMobile={isMobile} />
 
@@ -70,6 +73,89 @@ export default function Settings() {
         </div>
       </div>
     </PageTransition>
+  )
+}
+
+function ChangePasswordCard({ isMobile }: { isMobile: boolean }) {
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState('')
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (newPassword !== confirmPassword) {
+      setStatus('error')
+      setErrorMsg('Passwords do not match')
+      return
+    }
+    if (newPassword.length < 6) {
+      setStatus('error')
+      setErrorMsg('Password must be at least 6 characters')
+      return
+    }
+    setStatus('loading')
+    try {
+      const res = await apiFetch('/api/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setStatus('success')
+        setCurrentPassword('')
+        setNewPassword('')
+        setConfirmPassword('')
+        setTimeout(() => setStatus('idle'), 3000)
+      } else {
+        setStatus('error')
+        setErrorMsg(data.error || 'Failed to change password')
+      }
+    } catch {
+      setStatus('error')
+      setErrorMsg('Request failed')
+    }
+  }
+
+  return (
+    <GlassCard noPad>
+      <div style={{ padding: isMobile ? 16 : 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(50,215,75,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Lock size={18} style={{ color: '#32D74B' }} />
+          </div>
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>Change Password</h2>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>Current Password</label>
+            <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required
+              style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 13, color: 'rgba(255,255,255,0.9)', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>New Password</label>
+            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" required minLength={6}
+              style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 13, color: 'rgba(255,255,255,0.9)', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>Confirm New Password</label>
+            <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" required minLength={6}
+              style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 13, color: 'rgba(255,255,255,0.9)', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+          <button type="submit" disabled={status === 'loading' || !currentPassword || !newPassword || !confirmPassword}
+            style={{
+              width: '100%', padding: '12px 16px', borderRadius: 10, border: 'none', cursor: status === 'loading' ? 'not-allowed' : 'pointer',
+              background: status === 'success' ? 'rgba(50,215,75,0.2)' : '#007AFF', color: '#fff', fontSize: 13, fontWeight: 600,
+              opacity: status === 'loading' ? 0.6 : 1,
+            }}>
+            {status === 'loading' ? 'Updating...' : status === 'success' ? 'Password Updated' : 'Update Password'}
+          </button>
+          {status === 'error' && <p style={{ fontSize: 12, color: '#FF453A', textAlign: 'center' }}>{errorMsg}</p>}
+        </form>
+      </div>
+    </GlassCard>
   )
 }
 

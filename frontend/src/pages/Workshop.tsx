@@ -38,6 +38,14 @@ interface Task {
 export default function Workshop() {
   const m = useIsMobile()
   const { data, loading, refetch } = useApi<any>('/api/tasks', 5000)
+  const [agentName, setAgentName] = useState('Agent')
+
+  useEffect(() => {
+    apiFetch('/api/config').then(r => r.json()).then(d => {
+      const name = (d.name || '').replace(/ Mission Control$/, '')
+      if (name) setAgentName(name)
+    }).catch(() => {})
+  }, [])
   const [showAddModal, setShowAddModal] = useState(false)
   const [viewTask, setViewTask] = useState<Task | null>(null)
   const [addForm, setAddForm] = useState({ title: '', description: '', priority: 'medium', tags: '' })
@@ -98,7 +106,7 @@ export default function Workshop() {
     } catch {}
   }
 
-  const discussWithAri = (task: Task) => {
+  const discussWithAgent = (task: Task) => {
     const reportSnippet = task.result ? task.result.substring(0, 500) : task.description
     const message = `Regarding the task "${task.title}":\n\n${reportSnippet}\n\nWhat should we do with this?`
     window.dispatchEvent(new CustomEvent('open-chat', { detail: { message } }))
@@ -179,17 +187,17 @@ export default function Workshop() {
 
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10, flexDirection: m ? 'column' : 'row' }}>
-            {/* Discuss with Ari — the primary action */}
+            {/* Discuss with agent — the primary action */}
             {viewTask.result && (
               <button
-                onClick={() => discussWithAri(viewTask)}
+                onClick={() => discussWithAgent(viewTask)}
                 style={{
                   flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                   padding: '12px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
                   background: '#007AFF', color: '#fff', fontSize: 13, fontWeight: 600,
                 }}
               >
-                <MessageSquare size={15} /> Discuss with Ari
+                <MessageSquare size={15} /> Discuss with {agentName}
               </button>
             )}
 
@@ -401,7 +409,7 @@ export default function Workshop() {
                           {/* Discuss for done tasks */}
                           {col === 'done' && task.result && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); discussWithAri(task); }}
+                              onClick={(e) => { e.stopPropagation(); discussWithAgent(task); }}
                               style={{
                                 display: 'flex', alignItems: 'center', gap: 4,
                                 padding: '5px 10px', borderRadius: 7,

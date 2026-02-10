@@ -119,12 +119,14 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     // Set httpOnly cookie
     res.cookie('mc_token', result.accessToken, {
       httpOnly: true,
+      secure: true,
       sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000, // 24h
       path: '/',
     });
     res.cookie('mc_refresh', result.refreshToken, {
       httpOnly: true,
+      secure: true,
       sameSite: 'lax',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30d
       path: '/api/auth/refresh',
@@ -144,7 +146,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invite code, username, and password required' });
     }
     if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    if (!/^[a-zA-Z0-9_-]+$/.test(username)) return res.status(400).json({ error: 'Username must be alphanumeric' });
+    if (!/^[a-zA-Z0-9@._-]+$/.test(username)) return res.status(400).json({ error: 'Username contains invalid characters' });
 
     // Validate invite code
     const invite = redeemInviteCode(inviteCode);
@@ -162,6 +164,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const result = await authenticateUser(username, password);
     res.cookie('mc_token', result.accessToken, {
       httpOnly: true,
+      secure: true,
       sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000,
       path: '/',
@@ -188,6 +191,7 @@ app.post('/api/auth/refresh', async (req, res) => {
     const accessToken = generateAccessToken(user);
     res.cookie('mc_token', accessToken, {
       httpOnly: true,
+      secure: true,
       sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000,
       path: '/',
@@ -201,6 +205,28 @@ app.post('/api/auth/refresh', async (req, res) => {
 
 app.get('/api/auth/check', requireAuth, (req, res) => {
   res.json({ ok: true, user: req.user });
+});
+
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Current and new password required' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+
+    const store = loadUsers();
+    const user = store.users[req.user.userId];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const valid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    user.passwordHash = await hashPassword(newPassword);
+    saveUsers(store);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[Auth change-password]', err.message);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -465,7 +491,7 @@ async function refreshStatusCache(ctx = null) {
 
     // Parse openclaw status
     const sessionsMatch = ocStatus.match(/(\d+) active/);
-    const modelMatch = ocStatus.match(/default\s+(us\.anthropic\.\S+|anthropic\.\S+|[\w./-]+claude[\w./-]*)/);
+    const modelMatch = ocStatus.match(/default\s+([\w.:/-]+)\s*\(/);
     const memoryMatch = ocStatus.match(/(\d+)\s*files.*?(\d+)\s*chunks/);
     const heartbeatInterval = ocStatus.match(/Heartbeat\s*│\s*(\w+)/);
     const agentsMatch = ocStatus.match(/Agents\s*│\s*(\d+)/);
@@ -591,9 +617,9 @@ app.get('/api/status', async (req, res) => {
 
     res.json({
       agent: {
-        name: mcConfig.name || 'Mission Control',
+        name: (() => { try { const id = fs.readFileSync(path.join(req.ctx.workspacePath, 'IDENTITY.md'), 'utf8'); const m = id.match(/\*\*Name:\*\*\s*(.+)/); return m ? m[1].trim() : mcConfig.name || 'Mission Control'; } catch { return mcConfig.name || 'Mission Control'; } })(),
         status: 'active',
-        model: modelMatch ? modelMatch[1].replace('us.anthropic.','').replace(/claude-opus-(\d+)-(\d+).*/, 'Claude Opus $1.$2').replace(/claude-sonnet-(\d+).*/, 'Claude Sonnet $1').replace(/-/g,' ') : 'Claude Opus 4.6',
+        model: modelMatch ? modelMatch[1].replace('us.anthropic.','').replace(/^hf:[^/]+\//, '').replace(/claude-opus-(\d+)-(\d+).*/, 'Claude Opus $1.$2').replace(/claude-sonnet-(\d+).*/, 'Claude Sonnet $1').replace(/-/g,' ') : req.ctx.defaultModelName,
         activeSessions: sessionsMatch ? parseInt(sessionsMatch[1]) : 0,
         totalAgents: agentsMatch ? parseInt(agentsMatch[1]) : 1,
         memoryFiles: memoryMatch ? parseInt(memoryMatch[1]) : 0,
@@ -1399,7 +1425,7 @@ app.get('/api/costs', async (req, res) => {
         total: 0,
         tokens: dailyMap[dateStr] || 0,
         breakdown: {
-          'Kimi K2.5 (Synthetic)': 0,
+          [`${req.ctx.defaultModelName} (${req.ctx.defaultProviderName})`]: 0,
         }
       });
     }
@@ -1413,7 +1439,7 @@ app.get('/api/costs', async (req, res) => {
         totalTokens,
         totalSessions: sessions.length,
         activeSessions: sessions.filter(s => (s.totalTokens || 0) > 0).length,
-        note: 'LLM costs: Synthetic (Kimi K2.5) included in subscription. Claude Code sessions use Anthropic Max plan.',
+        note: `LLM costs: ${req.ctx.defaultProviderName} (${req.ctx.defaultModelName}) included in subscription. Claude Code sessions use Anthropic Max plan.`,
         budget: { monthly: 0, warning: 0 }
       },
       byService,
@@ -1576,14 +1602,16 @@ app.get('/api/agents', async (req, res) => {
     // Build agents list
     const agents = [];
 
-    // Primary agent
+    // Primary agent — read name from user's IDENTITY.md
+    let primaryName = 'Agent';
+    try { const id = fs.readFileSync(path.join(req.ctx.workspacePath, 'IDENTITY.md'), 'utf8'); const m = id.match(/\*\*Name:\*\*\s*(.+)/); if (m) primaryName = m[1].trim(); } catch {}
     agents.push({
-      id: 'ari',
-      name: 'Ari',
+      id: 'primary',
+      name: primaryName,
       role: 'Commander',
       avatar: '💻',
       status: 'active',
-      model: mainSession ? (mainSession.model || 'Kimi K2.5').replace('hf:moonshotai/', '').replace(/-/g, ' ') : 'Kimi K2.5',
+      model: mainSession ? (mainSession.model || req.ctx.defaultModelName).replace('hf:moonshotai/', '').replace(/-/g, ' ') : req.ctx.defaultModelName,
       description: 'Primary AI agent. Manages all operations, communications, and development tasks.',
       lastActive: mainSession?.updatedAt ? new Date(mainSession.updatedAt).toISOString() : new Date().toISOString(),
       totalTokens: mainSession?.totalTokens || 0,
@@ -1676,7 +1704,7 @@ app.get('/api/agents', async (req, res) => {
     console.error('[Agents API]', e.message);
     res.json({
       agents: [
-        { id: 'ari', name: 'Ari', role: 'Commander', avatar: '💻', status: 'active', model: 'Kimi K2.5 (Synthetic)', description: 'Primary agent (session data unavailable)', lastActive: new Date().toISOString(), totalTokens: 0 }
+        { id: 'primary', name: (() => { try { const id = fs.readFileSync(path.join(req.ctx.workspacePath, 'IDENTITY.md'), 'utf8'); const m = id.match(/\*\*Name:\*\*\s*(.+)/); return m ? m[1].trim() : 'Agent'; } catch { return 'Agent'; } })(), role: 'Commander', avatar: '💻', status: 'active', model: `${req.ctx.defaultModelName} (${req.ctx.defaultProviderName})`, description: 'Primary agent (session data unavailable)', lastActive: new Date().toISOString(), totalTokens: 0 }
       ],
       conversations: [],
       error: e.message
@@ -2148,6 +2176,17 @@ app.get('/api/config', (req, res) => {
   if (req.ctx) {
     safe.workspace = req.ctx.workspacePath;
     safe.memoryPath = req.ctx.memoryPath;
+
+    // Per-user agent name from IDENTITY.md
+    try {
+      const identity = fs.readFileSync(path.join(req.ctx.workspacePath, 'IDENTITY.md'), 'utf8');
+      const nameMatch = identity.match(/\*\*Name:\*\*\s*(.+)/);
+      if (nameMatch) {
+        const agentName = nameMatch[1].trim();
+        safe.name = agentName + ' Mission Control';
+        safe.subtitle = 'Sauce Command Center';
+      }
+    } catch { /* keep global defaults */ }
   }
   // Include user info for the frontend
   safe.user = req.user;

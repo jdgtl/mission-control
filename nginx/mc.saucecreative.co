@@ -1,18 +1,17 @@
 # Mission Control — Nginx reverse proxy config
 #
 # Setup steps:
-# 1. sudo cp /home/openclaw/mission-control/nginx/mc.jdgtl.com /etc/nginx/sites-available/
-# 2. sudo ln -s /etc/nginx/sites-available/mc.jdgtl.com /etc/nginx/sites-enabled/
+# 1. sudo cp /home/openclaw/mission-control/nginx/mc.saucecreative.co /etc/nginx/sites-available/
+# 2. sudo ln -s /etc/nginx/sites-available/mc.saucecreative.co /etc/nginx/sites-enabled/
 # 3. sudo nginx -t && sudo systemctl reload nginx
-# 4. Set DNS: A record mc.jdgtl.com → 174.138.93.111
-# 5. sudo certbot --nginx -d mc.jdgtl.com  (adds SSL automatically)
+# 4. Set DNS: A record mc.saucecreative.co → 174.138.93.111
+# 5. sudo certbot --nginx -d mc.saucecreative.co  (adds SSL automatically)
 
 # Rate limiting zone for auth endpoints
 limit_req_zone $binary_remote_addr zone=auth:10m rate=20r/m;
 
 server {
-    listen 80;
-    server_name mc.jdgtl.com;
+    server_name mc.saucecreative.co;
 
     # Security headers
     add_header X-Frame-Options "SAMEORIGIN" always;
@@ -58,4 +57,25 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 60s;
     }
+
+    listen 174.138.93.111:443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/mc.saucecreative.co/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/mc.saucecreative.co/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+
+
+server {
+    if ($host = mc.saucecreative.co) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 174.138.93.111:80;
+    server_name mc.saucecreative.co;
+    return 404; # managed by Certbot
+
+
 }
